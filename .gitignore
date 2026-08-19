@@ -1,0 +1,17 @@
+data/
+results/cifar10/resnet32/baseline_training_200ep/save_finetune/tb_log/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# OS
+.DS_Store
+
+# Temporary files / User specified
+y_temperory_files/

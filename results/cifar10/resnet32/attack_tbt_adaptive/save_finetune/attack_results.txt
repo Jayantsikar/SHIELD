@@ -1,0 +1,18 @@
+============================================================
+ Attack: TBT Adaptive (TBT_adaptive.py)
+ Dataset: CIFAR-10 | Model: ResNet32
+ Epochs: 200
+ Finished at: Mon Aug 10 03:56:19 AM IST 2026 | Exit: 0
+============================================================
+
+--- Final Epochs ---
+Starting epoch 198 / 200
+  Loss (iter):        tensor(38.9417, device='cuda:0')
+Starting epoch 199 / 200
+  Loss (iter):        tensor(38.9353, device='cuda:0')
+Starting epoch 200 / 200
+  Loss (iter):        tensor(38.9353, device='cuda:0')
+
+--- Final Accuracy ---
+Trigger ASR (asr!):  67.78% (tensor(67.7800, device='cuda:0'))
+Clean Accuracy (avg!):  62.43% (tensor(62.4300, device='cuda:0'))

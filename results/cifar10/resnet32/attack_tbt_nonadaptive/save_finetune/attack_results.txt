@@ -1,0 +1,23 @@
+============================================================
+ Attack: TBT Non-Adaptive (TBT_nonadaptive.py)
+ Dataset: CIFAR-10 | Model: ResNet32
+ Epochs: 200
+ SLURM Job ID: 1200
+ Log file: 1200_tbt_nonadaptive.out
+ Finished at: Mon Aug 10 01:45:21 AM IST 2026 | Exit: 0
+============================================================
+
+--- Final Epochs ---
+Starting epoch 199 / 200
+  Loss (iter):        tensor(0.3626, device='cuda:0')
+  Output tensors:     tensor(5.1642, device='cuda:0', grad_fn=<UnbindBackward0>)
+                      tensor(1.1003, device='cuda:0', grad_fn=<UnbindBackward0>)
+
+Starting epoch 200 / 200
+  Loss (iter):        tensor(0.3626, device='cuda:0')
+  Output tensors:     tensor(5.1642, device='cuda:0', grad_fn=<UnbindBackward0>)
+                      tensor(1.1003, device='cuda:0', grad_fn=<UnbindBackward0>)
+
+--- Final Accuracy ---
+Trigger data:  8951 / 10000 correct  →  89.51%
+Clean data:    8266 / 10000 correct  →  82.66%

@@ -1,0 +1,12 @@
+============================================================
+ Attack: Trigger Non-Adaptive (trigger_nonadaptive.py)
+ Dataset: CIFAR-10 | Model: ResNet32
+ Finished at: Mon Aug 10 04:34:17 AM IST 2026 | Exit: 0
+============================================================
+
+--- Final Accuracy ---
+Clean Accuracy (top1.avg!): 71.24% (tensor(71.2400, device='cuda:0'))
+Trigger ASR (top1.asr!): 10.35% (tensor(10.3500, device='cuda:0'))
+Got correct on trigger data: 12.46% (1246/10000)
+
+Note: This attack generated the required ProFlip files (SNI.npy, perturbed.pth) for CSB Non-Adaptive.

@@ -1,79 +1,102 @@
-#!/usr/bin/env 
+#!/bin/bash
+#SBATCH --job-name=resnet32_stl10_finetune
+#SBATCH --partition=gpu-P100
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=32G
+#SBATCH --time=10:00:00
+#SBATCH --output=%j_finetune_stl10.out
 
-############### Host   ##############################
-HOST=$(hostname)
-echo "Current host is: $HOST"
+# Activate the conda environment
+source ~/miniconda3/etc/profile.d/conda.sh 2>/dev/null \
+    || source ~/miniconda/etc/profile.d/conda.sh 2>/dev/null \
+    || { echo "ERROR: conda not found."; exit 1; }
+conda activate bfa
 
-# Automatic check the host and configure
-case $HOST in
-"alpha")
-    PYTHON="/usr/bin/python3.6" # python environment path
-    TENSORBOARD='/home/elliot/anaconda3/envs/pytorch041/bin/tensorboard' # tensorboard environment path
-    data_path='./data'
-    ;;
-esac
+# THE MOST IMPORTANT RULE (DO NOT FORGET!)
+# Always start your job script with cd "$TMPDIR" || exit 1
+# This is the #1 reason jobs run slowly. Without this line, your job runs on slow network storage.
+cd "$TMPDIR" || exit 1
 
-DATE=`date +%Y-%m-%d`
+# Copy the entire Aegis project to the fast local SSD (includes data/ and save/model_best.pth.tar)
+cp -r ~/Aegis ./ || exit 1
+cd Aegis/stl10/resnet32 || exit 1
 
+# FIX: Point DATA_PATH to the fast local SSD copy, NOT home (slow network storage)
+DATA_PATH="$TMPDIR/Aegis/stl10/resnet32/data"
 
+# Finetune save goes to fast SSD during training, synced to home every 10 min + at end
+SAVE_PATH="./save_finetune/"
+SAVE_HOME="$HOME/Aegis/stl10/resnet32/save_finetune"
+mkdir -p $SAVE_PATH
+mkdir -p $SAVE_HOME
 
-############### Configurations ########################
-enable_tb_display=false # enable tensorboard display
-model=resnet32_quan
-dataset=stl10
-epochs=100
-train_batch_size=128
-test_batch_size=128
-optimizer=SGD
+# AUTO-RESUME: Check if a finetune checkpoint already exists in home to resume from.
+# Otherwise, start fresh finetuning from the base model trained in train_STL.sh.
+CHECKPOINT_HOME="${SAVE_HOME}/checkpoint.pth.tar"
+BASE_MODEL="$TMPDIR/Aegis/stl10/resnet32/save/model_best.pth.tar"
 
-label_info=binarized
-
-save_path=./save_finetune/
-tb_path=${save_path}/tb_log  #tensorboard log path
-
-PYTHON="/usr/bin/python3.6"
-data_path='./data'
-pretrained_model=./save/model_best.pth.tar
-
-echo $PYTHON
-
-############### Neural network ############################
-{
-$PYTHON main.py --dataset ${dataset} --data_path ${data_path}   \
-    --arch ${model} --save_path ${save_path} \
-    --epochs ${epochs} --learning_rate 0.02 \
-    --optimizer ${optimizer} \
-	--schedule 80 120  --gammas 0.1 0.1 \
-    --attack_sample_size ${train_batch_size} \
-    --test_batch_size ${test_batch_size} \
-    --workers 1 --ngpu 1 --gpu_id 0 \
-    --print_freq 100 --decay 0.0003 --momentum 0.9 \
-    --resume ${pretrained_model} \
-    --ic_only True \
-    #--adv_train
-
-    # --clustering --lambda_coeff 1e-3    
-} &
-############## Tensorboard logging ##########################
-{
-if [ "$enable_tb_display" = true ]; then 
-    sleep 30 
-    wait
-    $TENSORBOARD --logdir $tb_path  --port=6006
+if [ -f "$CHECKPOINT_HOME" ]; then
+    echo "=== Found existing finetune checkpoint — resuming from ${CHECKPOINT_HOME} ==="
+    cp "$CHECKPOINT_HOME" "${SAVE_PATH}checkpoint.pth.tar"
+    PRETRAINED_MODEL="${SAVE_PATH}checkpoint.pth.tar"
+    FINE_TUNE_FLAG=""              # Resume: keep saved epoch, don't reset to 0
+elif [ -f "$BASE_MODEL" ]; then
+    echo "=== No finetune checkpoint found — starting fresh from base model (model_best.pth.tar) ==="
+    PRETRAINED_MODEL="$BASE_MODEL"
+    FINE_TUNE_FLAG="--fine_tune"   # Fresh start: reset epoch to 0
+else
+    echo "ERROR: Base model not found at $BASE_MODEL. Run train_STL.sh first!" && exit 1
 fi
-} &
-{
-if [ "$enable_tb_display" = true ]; then
-    sleep 45
-    wait
-    case $HOST in
-    "Hydrogen")
-        firefox http://0.0.0.0:6006/
-        ;;
-    "alpha")
-        google-chrome http://0.0.0.0:6006/
-        ;;
-    esac
-fi 
-} &
-wait
+
+# Force matplotlib to use non-GUI backend (prevents random freezes on headless GPU nodes)
+export MPLBACKEND=Agg
+
+# BACKGROUND SYNC: Copy finetune checkpoint to home every 10 minutes while training runs.
+# This ensures progress is never lost if SLURM kills the job mid-run.
+(
+    while true; do
+        sleep 600
+        if [ -f "${SAVE_PATH}checkpoint.pth.tar" ]; then
+            cp "${SAVE_PATH}checkpoint.pth.tar" "${SAVE_HOME}/checkpoint.pth.tar"
+            [ -f "${SAVE_PATH}model_best.pth.tar" ] && \
+                cp "${SAVE_PATH}model_best.pth.tar" "${SAVE_HOME}/model_best.pth.tar"
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Auto-synced finetune checkpoint to ${SAVE_HOME}"
+        fi
+    done
+) &
+SYNC_PID=$!
+echo "=== Background checkpoint sync started (PID=${SYNC_PID}, every 10 min) ==="
+
+# Run branch finetuning (--ic_only trains only the internal classifiers, not backbone)
+# STL-10: 96x96 images, 10 classes
+# -u flag = unbuffered output so logs print live to .out file
+python -u main.py \
+    --dataset stl10 \
+    --data_path ${DATA_PATH} \
+    --arch resnet32_quan \
+    --save_path ${SAVE_PATH} \
+    --epochs 200 \
+    --learning_rate 0.005 \
+    --optimizer SGD \
+    --schedule 80 120 \
+    --gammas 0.1 0.1 \
+    --attack_sample_size 128 \
+    --test_batch_size 128 \
+    --workers 4 \
+    --ngpu 1 \
+    --gpu_id 0 \
+    --print_freq 100 \
+    --decay 0.0003 \
+    --momentum 0.9 \
+    --resume "${PRETRAINED_MODEL}" \
+    ${FINE_TUNE_FLAG} \
+    --ic_only True \
+    --adv_train
+
+# Kill background sync
+kill $SYNC_PID 2>/dev/null
+
+# CRITICAL: Final sync — copy everything back to home before SLURM wipes TMPDIR
+cp -r save_finetune/* "${SAVE_HOME}/"
+echo "=== DONE: Finetuned model saved to ${SAVE_HOME} ==="

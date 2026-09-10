@@ -172,17 +172,33 @@ net1=net1.cuda()
 # Checksum Integrity check
 # ============================================================
 import hashlib
-def compute_ic_checksum(model: torch.nn.Module) -> str:
+
+def get_internal_classifiers(model: torch.nn.Module):
+    ics = []
+    for name, module in model.named_modules():
+        if isinstance(module, quan_Linear) and getattr(module, 'out_features', 0) == 10:
+            ics.append(module)
+    return ics
+
+def compute_single_ic_checksum(module: torch.nn.Module) -> str:
     hasher = hashlib.sha256()
-    for name, param in model.state_dict().items():
+    for name, param in module.state_dict().items():
         hasher.update(param.detach().cpu().numpy().tobytes())
     return hasher.hexdigest()
 
-golden_checksums = {0: compute_ic_checksum(net), 1: compute_ic_checksum(net1), 2: compute_ic_checksum(net2)}
+# Calculate Golden checksums for all 16 internal classifiers in the clean net BEFORE the attack
+golden_checksums = {}
+_ics = get_internal_classifiers(net)
+for i, ic_module in enumerate(_ics):
+    golden_checksums[i] = compute_single_ic_checksum(ic_module)
 
-def verify_ic(model, ic_index, golden_checksums) -> bool:
-    current = compute_ic_checksum(model)
-    return current != golden_checksums[ic_index]
+def verify_all_ics(model, golden_checksums) -> list:
+    compromised = []
+    _current_ics = get_internal_classifiers(model)
+    for i, ic_module in enumerate(_current_ics):
+        if compute_single_ic_checksum(ic_module) != golden_checksums.get(i, ""):
+            compromised.append(i)
+    return compromised
 
 trust_mask = torch.ones(3) # 1 = trusted, 0 = compromised
 
@@ -507,27 +523,27 @@ def validate_for_attack(val_loader, model, criterion, num_branch, xh):
     model.eval()
     output_summary = [] # init a list for output summary
 
-    # --- DEFENSE: Self-Healing Multi-IC Checksum ---
-    # Check ALL three ICs. TBT only ever poisons IC-0 (net); net1 and net2
-    # are frozen reference copies whose checksums will always pass.
-    # If IC-0 is poisoned, we vote it out and fall back to IC-1 (net1).
-    _ic_models = {0: net, 1: net1, 2: net2}
-    _ic_status  = {idx: verify_ic(m, idx, golden_checksums) for idx, m in _ic_models.items()}
+    # --- DEFENSE: Intra-Model IC Checksum ---
+    # We only use 'model' (which is 'net'). We compute checksums for its internal classifiers
+    # and exclude the compromised ones from the ensemble voting pool.
+    compromised_ics = verify_all_ics(model, golden_checksums)
+    
+    for idx in range(num_branch):
+        if idx in compromised_ics:
+            print(f"[ALERT] Internal Classifier {idx} checksum FAILED — voting it OUT of the ensemble.")
 
-    for idx, compromised in _ic_status.items():
-        if compromised:
-            print(f"[ALERT] IC {idx} checksum FAILED — voting it OUT of the ensemble.")
-        else:
-            print(f"[OK]    IC {idx} checksum verified — model intact.")
+    # Filter index_list to only include healthy ICs
+    safe_pool = [idx for idx in index_list[4:] if idx not in compromised_ics]
+    
+    # If safe_pool is empty, fallback to any healthy IC from the entire index list
+    if not safe_pool:
+        safe_pool = [idx for idx in index_list if idx not in compromised_ics]
 
-    # Pick the first healthy IC for inference
-    _healthy = [idx for idx, bad in _ic_status.items() if not bad]
-    if _healthy:
-        inference_model = _ic_models[_healthy[0]]
-        print(f"[Self-Healing] Using IC {_healthy[0]} for inference.")
-    else:
+    if not safe_pool:
+        print("[CRITICAL] All Internal Classifiers compromised — serving random outputs as last resort.")
         inference_model = None
-        print("[CRITICAL] All ICs compromised — serving random outputs as last resort.")
+    else:
+        inference_model = model
 
 
     with torch.no_grad():
@@ -558,7 +574,8 @@ def validate_for_attack(val_loader, model, criterion, num_branch, xh):
 
             mask = torch.zeros(input.size(0), num_branch).cuda()
             for j in range(input.size(0)):
-                pre_index = random.sample(index_list[4:], num_c)
+                num_c_actual = min(num_c, len(safe_pool))
+                pre_index = random.sample(safe_pool, num_c_actual)
                 mask[j, pre_index] = 1
                 for item in pre_index:
                     count_list[item] += 1
@@ -573,7 +590,7 @@ def validate_for_attack(val_loader, model, criterion, num_branch, xh):
             losses.update(loss.item(), input.size(0))
         print("top1.asr defended/self-healed (ensemble):", top1.avg, top5.avg)
         print(count_list)
-        return top1.avg, _ic_status
+        return top1.avg, compromised_ics
 
 def validate_for_attack_undefended(val_loader, model, criterion, num_branch, xh):
     """Measures ASR WITHOUT any defense. Shows the raw TBT attack strength.
@@ -633,23 +650,22 @@ def validate_clean_defended(val_loader, model, criterion, num_branch):
 
     model.eval()
 
-    # --- Self-Healing Multi-IC Checksum ---
-    _ic_models = {0: net, 1: net1, 2: net2}
-    _ic_status  = {idx: verify_ic(m, idx, golden_checksums) for idx, m in _ic_models.items()}
+    # --- Self-Healing Intra-Model IC Checksum ---
+    compromised_ics = verify_all_ics(model, golden_checksums)
 
-    for idx, compromised in _ic_status.items():
-        if compromised:
-            print(f"[ALERT][Clean] IC {idx} checksum FAILED — voting it OUT.")
-        else:
-            print(f"[OK][Clean]    IC {idx} checksum verified — model intact.")
+    for idx in range(num_branch):
+        if idx in compromised_ics:
+            print(f"[ALERT][Clean] Internal Classifier {idx} checksum FAILED — voting it OUT.")
 
-    _healthy = [idx for idx, bad in _ic_status.items() if not bad]
-    if _healthy:
-        inference_model = _ic_models[_healthy[0]]
-        print(f"[Self-Healing][Clean] Using IC {_healthy[0]} for clean inference.")
-    else:
+    safe_pool = [idx for idx in index_list[4:] if idx not in compromised_ics]
+    if not safe_pool:
+        safe_pool = [idx for idx in index_list if idx not in compromised_ics]
+
+    if not safe_pool:
+        print("[CRITICAL][Clean] All Internal Classifiers compromised — serving random outputs.")
         inference_model = None
-        print("[CRITICAL][Clean] All ICs compromised — serving random outputs.")
+    else:
+        inference_model = model
 
     with torch.no_grad():
         for i, (input, target) in enumerate(val_loader):
@@ -676,7 +692,8 @@ def validate_clean_defended(val_loader, model, criterion, num_branch):
 
             mask = torch.zeros(input.size(0), num_branch).cuda()
             for j in range(input.size(0)):
-                pre_index = random.sample(index_list[4:], num_c)
+                num_c_actual = min(num_c, len(safe_pool))
+                pre_index = random.sample(safe_pool, num_c_actual)
                 mask[j, pre_index] = 1
                 for item in pre_index:
                     count_list[item] += 1
@@ -690,7 +707,7 @@ def validate_clean_defended(val_loader, model, criterion, num_branch):
             top1.update(prec1.item(), input.size(0))
             losses.update(loss.item(), input.size(0))
         print("top1.clean_defended/self-healed (ensemble):", top1.avg)
-        return top1.avg, _ic_status
+        return top1.avg, compromised_ics
 
 # Populate index_list with best-performing branch indices — MUST run before validate()
 validate2(loader_test, net, criterion, 16) 
@@ -914,9 +931,9 @@ print(f'  ASR        (no defense)   : {final_asr_undefended:.2f}%  <- raw TBT at
 print(f'  ASR        (defended)     : {final_asr_defended:.2f}%  <- after checksum blocks model')
 print('------------------------------------------------------------')
 print('  ATTACK DETECTION STATUS (per sub-network):')
-for ic_id, compromised in asr_ic_status.items():
-    status_str = "ATTACKED / COMPROMISED" if compromised else "CLEAN / SAFE"
-    print(f'  IC-{ic_id} (net{"" if ic_id==0 else ic_id})             : {status_str}')
+for ic_id in range(16):
+    status_str = "ATTACKED / COMPROMISED" if ic_id in asr_ic_status else "CLEAN / SAFE"
+    print(f'  Internal Classifier {ic_id:<2}          : {status_str}')
 print('============================================================')
 
 # Save final results summary to a text file
@@ -929,7 +946,7 @@ with open('./result/final_results_nonadaptive_ensemble.txt', 'w') as f:
     f.write(f'ASR (no defense / undefended)     : {final_asr_undefended:.2f}%\n')
     f.write(f'ASR (with checksum defense)       : {final_asr_defended:.2f}%\n\n')
     f.write(f'Attack Detection Status:\n')
-    for ic_id, compromised in asr_ic_status.items():
-        status_str = "ATTACKED / COMPROMISED" if compromised else "CLEAN / SAFE"
-        f.write(f'IC-{ic_id} (net{"" if ic_id==0 else ic_id}) : {status_str}\n')
+    for ic_id in range(16):
+        status_str = "ATTACKED / COMPROMISED" if ic_id in asr_ic_status else "CLEAN / SAFE"
+        f.write(f'Internal Classifier {ic_id:<2} : {status_str}\n')
 print('Results summary saved to ./result/final_results_nonadaptive_ensemble.txt')

@@ -4,6 +4,7 @@
 \usepackage{amsmath,amssymb}
 \usepackage{booktabs}
 \usepackage{multirow}
+\usepackage{algorithm}
 \usepackage{algorithmic}
 
 \title{ResilientDNN: Stochastic Ensembling and Self-Healing for Multi-Exit DNNs Against Targeted Bit Flips}
@@ -71,6 +72,13 @@ In this study, we evaluate two primary variations of these attacks:
 \subsection{Current Existing Solutions: Aegis}
 To mitigate targeted bit-flip attacks, the state-of-the-art framework \textbf{Aegis} introduces a \textit{Randomized Dynamic Early-Exit} mechanism atop a Shallow-Deep Network (SDN) backbone equipped with $B$ internal classifier (IC) branches $\{B_0, B_1, \dots, B_{B-1}\}$ attached to intermediate hidden layers.
 
+\begin{figure}[!ht]
+\centering
+\includegraphics[width=\linewidth]{figures/fig_sdn_architecture.pdf}
+\caption{Structure of a Shallow-Deep Network (SDN) featuring multiple internal classifiers (ICs) attached to intermediate layers.}
+\label{fig:sdn_architecture}
+\end{figure}
+
 During inference on an input sample $x$, Aegis executes the following protocol:
 \begin{enumerate}
     \item \textbf{Multi-Branch Logit Generation:} The network produces intermediate logit vectors $\mathbf{z}(x) = [z_0(x), z_1(x), \dots, z_{B-1}(x)]$. Each branch computes class probabilities via softmax:
@@ -123,8 +131,12 @@ Instead of sequentially halting inference upon encountering an isolated overconf
 \end{enumerate}
 By requiring a multi-branch consensus, SBE ensures that an isolated hijacked branch cannot dictate the classification outcome, as its vote is diluted and outvoted by the remaining clean branches in $S$. Furthermore, SBE completely eliminates the brittle static threshold $\tau$.
 
-% TODO: INSERT DIAGRAM HERE
-% [Indication: Insert a block diagram showing the ResNet-32 architecture divided into sequential blocks, with SHA-256 checksum modules attached. Show how a failure in Block K disables ICs K through N, routing the final prediction through a stochastic ensemble of ICs 0 through K-1.]
+\begin{figure}[!ht]
+\centering
+\includegraphics[width=\linewidth]{figures/fig_architecture_checksum.pdf}
+\caption{Block diagram showing the ResNet-32 architecture partitioned into sequential blocks with SHA-256 checksum modules. A failure in Block $K$ truncates the candidate pool, routing the prediction through a stochastic ensemble of the remaining safe internal classifiers (ICs).}
+\label{fig:architecture}
+\end{figure}
 
 \subsection{Layer 2: Sequential Checksum-Based Self-Healing}
 While SBE effectively neutralizes non-adaptive attacks, an adaptive adversary with knowledge of the ensemble can optimize joint bit-flips across multiple branches or target the shared network stem to corrupt all downstream features simultaneously. To counteract this, Layer 2 incorporates an on-device \textbf{Sequential Block Verification and Truncation} mechanism. Because feature extraction is sequential, a bit-flip in an early block corrupts all subsequent blocks, but leaves preceding branches pristine. Thus, upon detecting an attack, we isolate the compromised segment and predict the result based entirely on the previous, uncompromised branches.
@@ -152,61 +164,75 @@ While SBE effectively neutralizes non-adaptive attacks, an adaptive adversary wi
 \end{enumerate}
 This sequential truncation strategy guarantees that poisoned features are isolated. The remaining clean ICs seamlessly absorb the inference load, enabling the network to self-heal its predictions with zero retraining and negligible cryptographic overhead.
 
+\begin{algorithm}[!htb]
+\caption{Sequential Checksum \& Early-Exit Truncation}
+\label{alg:defense}
+\begin{algorithmic}[1]
+\renewcommand{\algorithmicrequire}{\textbf{Input:}}
+\renewcommand{\algorithmicensure}{\textbf{Output:}}
+\REQUIRE Model $M$, Internal Classifiers $IC_1 \dots IC_N$, sample $x$, golden hashes $\{h_i^*\}$, ensemble size $C$
+\ENSURE Final prediction $\hat{y}$
+\STATE \textbf{Initialize:} $\mathcal{B}_{\text{safe}} \leftarrow \{IC_1, IC_2, \dots, IC_N\}$
+\STATE \textit{// Phase 1: Sequential Block Checksum Validation}
+\FOR{each ResNet Block $k \in \{0, \dots, N-1\}$ in $M$}
+    \STATE $h_k \leftarrow \text{SHA-256}(\text{bytes}(W_{q, k}))$
+    \IF{$h_k \neq h_k^*$}
+        \STATE \textit{// Poison detected! Truncate the safe pool}
+        \STATE $\mathcal{B}_{\text{safe}} \leftarrow \{IC_i \in \mathcal{B}_{\text{safe}} \mid i < \text{first\_IC\_in}(k)\}$
+        \STATE \textbf{break}
+    \ENDIF
+\ENDFOR
+\STATE \textit{// Phase 2: Stochastic Branch Selection}
+\STATE $S_{\text{safe}} \leftarrow \text{RandomSample}(\mathcal{B}_{\text{safe}}, \text{size}=\min(C, |\mathcal{B}_{\text{safe}}|))$
+\STATE \textit{// Phase 3: Multi-Branch Logit Generation}
+\STATE $Logits \leftarrow []$
+\FOR{each $IC_j \in S_{\text{safe}}$}
+    \STATE $Logits\text{.append}(\text{ForwardPass}(x, IC_j))$
+\ENDFOR
+\STATE \textit{// Phase 4: Confidence-Weighted Consensus}
+\STATE $Probs \leftarrow []$
+\FOR{each $l \in Logits$}
+    \STATE $Probs\text{.append}(\text{Softmax}(l))$
+\ENDFOR
+\STATE $\hat{y} \leftarrow \arg\max_c \left( \frac{1}{|S_{\text{safe}}|} \sum_{p \in Probs} p \right)$
+\RETURN $\hat{y}$
+\end{algorithmic}
+\end{algorithm}
+
 % ==============================================================================
 % SECTION 4: EXPERIMENTAL SETUP AND RESULTS
 % ==============================================================================
 \section{Experimental Setup and Results}
 
-We evaluated our defense against Targeted Bit-flip Trojan (TBT) attacks using quantized ResNet-32 models on the \textbf{CIFAR-10} benchmark. (Evaluation on STL-10 is currently ongoing). Table~\ref{tab:cifar10_results} and Table~\ref{tab:stl10_results} summarize the Clean Accuracy (C-Acc) and Attack Success Rate (ASR) across all configurations.
+We evaluated our defense against Targeted Bit-flip Trojan (TBT) attacks using quantized ResNet-32 models on the \textbf{CIFAR-10} benchmark. Following Table summarize the Clean Accuracy (C-Acc) and Attack Success Rate (ASR) across all configurations.
 
-% TODO: INSERT GRAPH/PLOT HERE
-% [Indication: Insert a plot showing the Clean Accuracy degradation and ASR mitigation when the defense is active vs. inactive, comparing Baseline Aegis, SBE Undefended, and SBE Defended.]
-
-\begin{table}[!tb]
-\caption{TBT Attack vs. Defense on CIFAR-10 (ResNet-32)}
-\label{tab:cifar10_results}
+\begin{figure}[!ht]
 \centering
-\footnotesize
-\setlength{\tabcolsep}{4pt}
-\begin{tabular}{@{}llcc@{}}
-\toprule
-\textbf{Attack} & \textbf{Defense Variant} & \textbf{C-Acc (\%)} $\uparrow$ & \textbf{ASR (\%)} $\downarrow$ \\
-\midrule
-\multirow{3}{*}{\textbf{Non-Adapt.}} 
-    & Baseline (Single Model)              & 88.69 & 17.82 \\
-    & \textbf{L1: SBE (Undefended)}        & 90.01 & 15.48 \\
-    & \textbf{L2: Self-Heal (Defended)} & \textbf{89.93} & \textbf{11.67} \\
-\midrule
-\multirow{3}{*}{\textbf{Adaptive}}   
-    & Baseline (Single Model)              & 83.41 & 38.50 \\
-    & \textbf{L1: SBE (Undefended)}        & 87.39 & 40.72 \\
-    & \textbf{L2: Self-Heal (Defended)} & \textbf{83.02} & \textbf{15.09} \\
-\bottomrule
-\end{tabular}
-\end{table}
+\includegraphics[width=\linewidth]{figures/fig_results_cifar10.pdf}
+\caption{Defense Performance Comparison on CIFAR-10. The grouped bar chart compares the Clean Accuracy and Attack Success Rate (ASR) under both Non-Adaptive and Adaptive TBT attacks for the Baseline, Undefended Ensemble (Layer 1), and Defended Ensemble (Layer 2) models.}
+\label{fig:results_cifar10}
+\end{figure}
 
-
-\begin{table}[!tb]
-\caption{TBT Attack vs. Defense on STL-10 (ResNet-32)}
-\label{tab:stl10_results}
+\begin{table}[!ht]
+\caption{Evaluation results of ASR against TBT on CIFAR-10 (ResNet-32)}
+\label{tab:asr_results}
 \centering
-\footnotesize
-\setlength{\tabcolsep}{4pt}
-\begin{tabular}{@{}llcc@{}}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{lcc}
 \toprule
-\textbf{Attack} & \textbf{Defense Variant} & \textbf{C-Acc (\%)} $\uparrow$ & \textbf{ASR (\%)} $\downarrow$ \\
+\textbf{Defense Model} & \textbf{Non-Adaptive ASR (\%)} $\downarrow$ & \textbf{Adaptive ASR (\%)} $\downarrow$ \\
 \midrule
-\multirow{3}{*}{\textbf{Non-Adapt.}} 
-    & Baseline Aegis              & TBD & TBD \\
-    & \textbf{L1: SBE (Undefended)}        & TBD & TBD \\
-    & \textbf{L2: Self-Heal (Defended)} & \textbf{TBD} & \textbf{TBD} \\
-\midrule
-\multirow{3}{*}{\textbf{Adaptive}}   
-    & Baseline Aegis              & TBD & TBD \\
-    & \textbf{L1: SBE (Undefended)}        & TBD & TBD \\
-    & \textbf{L2: Self-Heal (Defended)} & \textbf{TBD} & \textbf{TBD} \\
+BASE & 70.7 & 70.7 \\
+BIN & 94.8 & NA \\
+RA-BNN & 74.5 & NA \\
+SDN & 16.3 & 37.2 \\
+Aegis & 19.9 & 31.1 \\
+\textbf{L1: SBE (Undefended)} & 15.48 & 40.72 \\
+\textbf{L2: Self-Heal (Defended)} & \textbf{11.67} & \textbf{15.09} \\
 \bottomrule
-\end{tabular}
+\multicolumn{3}{l}{\footnotesize *NA indicates data is not available.}
+\end{tabular}%
+}
 \end{table}
 
 \subsection{Analysis on CIFAR-10}
@@ -215,10 +241,7 @@ We evaluated our defense against Targeted Bit-flip Trojan (TBT) attacks using qu
     \item \textbf{Adaptive Neutralization:} Under adaptive attacks, the baseline single model suffers a severe 38.50\% ASR with clean accuracy dropping to 83.41\%. The undefended SBE reaches 40.72\% ASR because the adaptive attacker explicitly optimizes the trigger against all internal branches. However, when Layer 2 self-healing isolates compromised branches, the ASR drops precipitously to \textbf{15.09\%}, while maintaining a clean accuracy of \textbf{83.02\%}.
 \end{itemize}
 
-\subsection{Analysis on STL-10}
-\begin{itemize}
-    \item \textbf{Evaluation Ongoing:} Results for the STL-10 dataset are currently pending and will be updated in future revisions.
-\end{itemize}
+
 
 
 % ==============================================================================

@@ -173,17 +173,62 @@ net1=net1.cuda()
 # Checksum Integrity check
 # ============================================================
 import hashlib
-def compute_ic_checksum(model: torch.nn.Module) -> str:
+
+def get_backbone_blocks(model_wrapper: torch.nn.Module):
+    blocks = []
+    
+    # Extract the actual ResNet from the Sequential wrapper (Normalize_layer, ResNet)
+    if isinstance(model_wrapper, torch.nn.Sequential) and len(model_wrapper) >= 2:
+        model = model_wrapper[1]
+    else:
+        model = model_wrapper
+
+    # Index -1: The stem (if this is poisoned, ALL branches are poisoned)
+    stem = torch.nn.Sequential(model.conv_1_3x3, model.bn_1)
+    blocks.append(('stem', stem))
+    
+    # Indices 0 to 14: The 15 ResNetBasicblocks
+    for g in range(1, 4):
+        group = getattr(model, f'group{g}', [])
+        for i in range(len(group)):
+            blocks.append((f'block_{len(blocks)-1}', group[i]))
+            
+    # Index 15: The final classifier
+    blocks.append(('classifier', model.classifier))
+    return blocks
+
+def compute_module_checksum(module: torch.nn.Module) -> str:
     hasher = hashlib.sha256()
-    for name, param in model.state_dict().items():
+    for name, param in module.state_dict().items():
         hasher.update(param.detach().cpu().numpy().tobytes())
     return hasher.hexdigest()
 
-golden_checksums = {0: compute_ic_checksum(net), 1: compute_ic_checksum(net1), 2: compute_ic_checksum(net2)}
+# Calculate Golden checksums for the sequential blocks BEFORE the attack
+golden_checksums = {}
+_blocks = get_backbone_blocks(net)
+for i, (name, mod) in enumerate(_blocks):
+    golden_checksums[name] = compute_module_checksum(mod)
 
-def verify_ic(model, ic_index, golden_checksums) -> bool:
-    current = compute_ic_checksum(model)
-    return current != golden_checksums[ic_index]
+def get_safe_pool_from_blocks(model, golden_checksums) -> list:
+    _current_blocks = get_backbone_blocks(model)
+    first_compromised_idx = -1
+    for i, (name, mod) in enumerate(_current_blocks):
+        if compute_module_checksum(mod) != golden_checksums.get(name, ""):
+            first_compromised_idx = i
+            break
+            
+    if first_compromised_idx == 0:
+        # Stem is compromised, all branches are poisoned. Safe pool is empty.
+        print("[CRITICAL] Stem poisoned. All branches compromised.")
+        return []
+    elif first_compromised_idx > 0:
+        # If block at index i is compromised, it feeds IC (i-1) and all subsequent ones.
+        # e.g., index 1 (group1[0]) computes features for IC 0. If it fails, IC 0 is unsafe.
+        k = first_compromised_idx - 1
+        print(f"[ALERT] Checksum failed at block index {first_compromised_idx}. Truncating safe pool to ICs 0 through {k-1}.")
+        return list(range(k))
+    else:
+        return list(range(16))
 
 trust_mask = torch.ones(3) # 1 = trusted, 0 = compromised
 
@@ -459,24 +504,26 @@ def validate_for_attack(val_loader, model, criterion, num_branch, xh):
     model.eval()
     output_summary = [] # init a list for output summary
 
-    # --- DEFENSE: Self-Healing Multi-IC Checksum ---
-    _ic_models = {0: net, 1: net1, 2: net2}
-    _ic_status  = {idx: verify_ic(m, idx, golden_checksums) for idx, m in _ic_models.items()}
+    # --- DEFENSE: Sequential Block Checksum & Early-Exit Truncation ---
+    safe_pool_full = get_safe_pool_from_blocks(model, golden_checksums)
+    
+    # Check which ICs were truncated
+    compromised_ics = [idx for idx in range(num_branch) if idx not in safe_pool_full]
+    for idx in compromised_ics:
+        print(f"[ALERT] IC {idx} receives poisoned data — voting it OUT of the ensemble.")
 
-    for idx, compromised in _ic_status.items():
-        if compromised:
-            print(f"[ALERT] IC {idx} checksum FAILED — voting it OUT of the ensemble.")
-        else:
-            print(f"[OK]    IC {idx} checksum verified — model intact.")
+    # Apply our standard heuristic: prefer deeper safe ICs (skip the first 4 if possible)
+    safe_pool = [idx for idx in safe_pool_full if idx >= 4]
+    
+    # If safe_pool is empty after skipping first 4, fallback to any healthy IC
+    if not safe_pool:
+        safe_pool = safe_pool_full
 
-    # Pick the first healthy IC for inference
-    _healthy = [idx for idx, bad in _ic_status.items() if not bad]
-    if _healthy:
-        inference_model = _ic_models[_healthy[0]]
-        print(f"[Self-Healing] Using IC {_healthy[0]} for inference.")
-    else:
+    if not safe_pool:
+        print("[CRITICAL] All branches poisoned — serving random outputs as last resort.")
         inference_model = None
-        print("[CRITICAL] All ICs compromised — serving random outputs as last resort.")
+    else:
+        inference_model = model
 
     with torch.no_grad():
         for i, (input, target) in enumerate(val_loader):
@@ -506,7 +553,8 @@ def validate_for_attack(val_loader, model, criterion, num_branch, xh):
 
             mask = torch.zeros(input.size(0), num_branch).cuda()
             for j in range(input.size(0)):
-                pre_index = random.sample(index_list[4:], num_c)
+                num_c_actual = min(num_c, len(safe_pool))
+                pre_index = random.sample(safe_pool, num_c_actual)
                 mask[j, pre_index] = 1
                 for item in pre_index:
                     count_list[item] += 1
@@ -521,7 +569,7 @@ def validate_for_attack(val_loader, model, criterion, num_branch, xh):
             losses.update(loss.item(), input.size(0))
         print("top1.asr defended/self-healed (ensemble):", top1.avg, top5.avg)
         print(count_list)
-        return top1.avg, _ic_status
+        return top1.avg, compromised_ics
 
 def validate_for_attack_undefended(val_loader, model, criterion, num_branch, xh):
     """Measures ASR WITHOUT any defense (trust_mask always=1). Shows what the
@@ -583,23 +631,22 @@ def validate_clean_defended(val_loader, model, criterion, num_branch):
 
     model.eval()
 
-    # --- Self-Healing Multi-IC Checksum ---
-    _ic_models = {0: net, 1: net1, 2: net2}
-    _ic_status  = {idx: verify_ic(m, idx, golden_checksums) for idx, m in _ic_models.items()}
+    # --- Self-Healing Sequential Block Checksum ---
+    safe_pool_full = get_safe_pool_from_blocks(model, golden_checksums)
+    
+    compromised_ics = [idx for idx in range(num_branch) if idx not in safe_pool_full]
+    for idx in compromised_ics:
+        print(f"[ALERT][Clean] IC {idx} receives poisoned data — voting it OUT.")
 
-    for idx, compromised in _ic_status.items():
-        if compromised:
-            print(f"[ALERT][Clean] IC {idx} checksum FAILED — voting it OUT.")
-        else:
-            print(f"[OK][Clean]    IC {idx} checksum verified — model intact.")
+    safe_pool = [idx for idx in safe_pool_full if idx >= 4]
+    if not safe_pool:
+        safe_pool = safe_pool_full
 
-    _healthy = [idx for idx, bad in _ic_status.items() if not bad]
-    if _healthy:
-        inference_model = _ic_models[_healthy[0]]
-        print(f"[Self-Healing][Clean] Using IC {_healthy[0]} for clean inference.")
-    else:
+    if not safe_pool:
+        print("[CRITICAL][Clean] All branches poisoned — serving random outputs.")
         inference_model = None
-        print("[CRITICAL][Clean] All ICs compromised — serving random outputs.")
+    else:
+        inference_model = model
 
     with torch.no_grad():
         for i, (input, target) in enumerate(val_loader):
@@ -626,7 +673,8 @@ def validate_clean_defended(val_loader, model, criterion, num_branch):
 
             mask = torch.zeros(input.size(0), num_branch).cuda()
             for j in range(input.size(0)):
-                pre_index = random.sample(index_list[4:], num_c)
+                num_c_actual = min(num_c, len(safe_pool))
+                pre_index = random.sample(safe_pool, num_c_actual)
                 mask[j, pre_index] = 1
                 for item in pre_index:
                     count_list[item] += 1
@@ -640,7 +688,7 @@ def validate_clean_defended(val_loader, model, criterion, num_branch):
             top1.update(prec1.item(), input.size(0))
             losses.update(loss.item(), input.size(0))
         print("top1.clean_defended/self-healed (ensemble):", top1.avg)
-        return top1.avg, _ic_status
+        return top1.avg, compromised_ics
 
 validate2(loader_test, net, criterion, 16)
 print(index_list)

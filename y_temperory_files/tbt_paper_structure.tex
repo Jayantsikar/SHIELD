@@ -1,0 +1,146 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+\begin{document}
+
+\title{Defending Deep Neural Networks Against Targeted Bit Trojan Attacks via Sequential Checksum and Stochastic Ensembles}
+
+\author{\IEEEauthorblockN{1\textsuperscript{st} Given Name Surname}
+\IEEEauthorblockA{\textit{dept. name of organization (of Aff.)} \\
+\textit{name of organization (of Aff.)}\\
+City, Country \\
+email address or ORCID}
+}
+
+\maketitle
+
+\begin{abstract}
+Deep Neural Networks (DNNs) are highly vulnerable to fault injection attacks, particularly Targeted Bit Trojan (TBT) attacks, where adversaries flip vulnerable memory bits to maliciously alter model behavior for specific trigger inputs. Existing defenses often introduce significant computational overhead or fail to generalize against adaptive attackers. In this paper, we propose a novel, self-healing defense mechanism that leverages Sequential Checksum Integrity checks coupled with a stochastic ensemble of Internal Classifiers (ICs). By partitioning the network backbone into sequential blocks and monitoring their integrity using golden SHA-256 checksums, our method dynamically isolates compromised layers. Upon detecting a bit-flip, the defense truncates the affected ICs and relies on a safe pool of unpoisoned branches to maintain high classification accuracy. Experimental evaluations on the ResNet-32 architecture using the CIFAR-10 dataset demonstrate that our approach successfully mitigates both non-adaptive and adaptive TBT attacks, significantly reducing the Attack Success Rate (ASR) while maintaining near-baseline clean accuracy.
+\end{abstract}
+
+\section{Introduction}
+The recent revolutionary development of deep neural network (DNN) models has promoted various security- and safety-sensitive intelligent applications, such as autonomous driving, AI on satellites, and medical diagnostics. However, the deployment of DNNs in such critical environments has raised severe concerns regarding their susceptibility to hardware-based fault injection attacks. Among these, Targeted Bit Trojan (TBT) attacks pose a significant threat. By precisely flipping a minimal number of bits in the model's memory (e.g., via Rowhammer attacks), an adversary can implant a backdoor that maliciously alters the model's behavior for specific trigger inputs while maintaining normal performance on clean data.
+
+% TODO: INSERT DIAGRAM HERE
+% [Indication: Insert a conceptual diagram illustrating how a TBT attack flips a bit in the memory (DRAM) of a deployed model, causing a specific input with a trigger to be misclassified, while normal inputs remain largely unaffected.]
+
+To mitigate these bit-flip attacks (BFAs), a small number of dedicated defenses have been proposed, which generally fall into two categories: integrity verification and model enhancement.
+First, integrity verification-based approaches verify the parameters at runtime. For example, some methods extract and compare unique cryptographic signatures of the original and runtime models to detect tampering. While effective at detecting any unauthorized modifications, they typically require an external, continuous monitoring process that introduces substantial performance overhead, making them impractical for edge devices and real-time commercial applications.
+Second, model enhancement-based approaches focus on improving the target model's robustness directly. Techniques like quantization or binarization constrain the weight values, drastically increasing the number of bits an attacker must flip to succeed. However, while effective against untargeted attacks, these methods often fail to protect against—and can even exacerbate vulnerabilities to—targeted attacks like TBT, where adversaries only need to find a small subset of critical bits.
+
+In this work, we propose a novel, self-healing defense method to mitigate Targeted Bit Trojan (TBT) attacks. Our key observation is that TBT attacks achieve their targeted misclassification by corrupting specific feature maps that propagate to the final output. If the exact location of the corruption can be identified in real-time without external monitoring overhead, the network can bypass the poisoned features. Based on this observation, we design a Sequential Checksum Integrity verification coupled with a dynamic stochastic ensemble. We partition the DNN backbone into sequential blocks and assign golden SHA-256 checksums to each. During inference, the network rapidly verifies these blocks. Crucially, instead of simply raising an alarm and halting, our defense truncates any internal classifiers (ICs) situated after a compromised block and dynamically routes the prediction through a stochastic ensemble of the remaining safe ICs. 
+
+Our proposed defense aims to achieve three critical goals: self-healing, low operational overhead, and utility preservation. By integrating the checksum directly into the sequential forward pass and relying on internal branching, the model self-corrects on the fly without external monitors. Furthermore, it operates without requiring complex retraining or trapdoor embeddings, preserving the original model's clean accuracy. 
+
+We conduct evaluations of our defense against both non-adaptive and adaptive TBT attacks on the ResNet-32 architecture using the CIFAR-10 dataset. The experimental results demonstrate that our approach can successfully neutralize TBT attacks, significantly reducing the attack success rate (ASR) to near-random guessing levels while maintaining a high clean accuracy comparable to the undefended baseline.
+
+\section{Background}
+
+\subsection{Targeted Bit-Flip Attacks}
+Targeted Bit-flip Attacks (BFAs), particularly the Targeted Bit Trojan (TBT) attack, introduce a severe threat to deployed DNNs by injecting malicious backdoors at the hardware level. The attacker's objective is to force the compromised model to misclassify inputs containing a specific trigger into a target class, while maintaining normal inference accuracy on clean inputs. 
+This process typically involves two stages. First, the adversary designs or optimizes a trigger (e.g., a specific pixel patch). Second, they employ a search algorithm, such as Neural Gradient Ranking (NGR), to identify the most critical network parameters whose perturbation maximizes the trigger's effect. The attacker then utilizes hardware vulnerabilities like Rowhammer to flip the specific bits corresponding to these critical parameters.
+
+In this study, we evaluate two primary variations of these attacks:
+\begin{itemize}
+    \item \textbf{Non-Adaptive TBT Attacks:} The adversary generates the trigger and selects the bits to flip assuming a standard, undefended model. For instance, the attacker may exclusively target the parameters in the final fully-connected layers to maximize the impact on the final classification logits. 
+    \item \textbf{Adaptive TBT Attacks:} In a white-box scenario where the defense mechanism (such as multi-branch early exits) is known, the adversary adapts their strategy. They may optimize the attack to compromise earlier shared layers (e.g., the network stem) or attempt to bypass specific defensive mechanisms by targeting intermediate representations, ensuring the backdoor propagates regardless of the chosen exit branch.
+\end{itemize}
+
+\subsection{Existing Defenses and Analysis}
+
+To mitigate targeted bit-flip attacks, the state-of-the-art framework \textbf{Aegis} introduces a \textit{Randomized Dynamic Early-Exit} mechanism atop a Shallow-Deep Network (SDN) backbone equipped with $B$ internal classifier (IC) branches $\{B_0, B_1, \dots, B_{B-1}\}$ attached to intermediate hidden layers.
+
+During inference on an input sample $x$, Aegis executes the following protocol:
+\begin{enumerate}
+    \item \textbf{Multi-Branch Logit Generation:} The network produces intermediate logit vectors $\mathbf{z}(x) = [z_0(x), z_1(x), \dots, z_{B-1}(x)]$. Each branch computes class probabilities via softmax:
+    \begin{equation}
+        P_i(x) = \text{Softmax}(z_i(x)), \quad c_i(x) = \max_{c} P_{i, c}(x),
+    \end{equation}
+    where $c_i(x)$ denotes the top-1 confidence and $\hat{y}_i = \arg\max_c P_{i, c}(x)$ is the predicted class for branch $i$.
+    \item \textbf{Randomized Branch Sampling:} To keep the runtime computational graph unpredictable to an offline adversary, Aegis randomly samples a subset of $C$ candidate branches (typically $C = 3$) without replacement from a pre-selected pool of high-performing branches $\mathcal{B}_{\text{pool}} \subset \{B_0, \dots, B_{B-1}\}$.
+    \item \textbf{Ordered Sequential Evaluation:} The candidate branches are sorted strictly by physical network depth from shallowest to deepest:
+    \begin{equation}
+        S = (s_1, s_2, \dots, s_C), \quad \text{where } \text{depth}(s_1) < \dots < \text{depth}(s_C).
+    \end{equation}
+    \item \textbf{Dynamic Early-Exit Thresholding:} The candidate branches in $S$ are evaluated sequentially. Inference terminates at the first candidate branch whose top-1 confidence meets or exceeds a fixed threshold $\tau = 0.95$:
+    \begin{equation}
+        i^* = \min \left\{ i \in \{1, \dots, C\} \mid c_{s_i}(x) \ge \tau \right\}.
+    \end{equation}
+    If the threshold is satisfied ($i^* \le C$), the sample immediately exits with output $\hat{y} = \hat{y}_{s_{i^*}}$, skipping all remaining deeper branches. If no branch satisfies the threshold, Aegis defaults to the deepest sampled branch: $\hat{y} = \hat{y}_{s_C}$.
+\end{enumerate}
+
+\paragraph{Critical Limitations and Vulnerability Analysis}
+While Aegis disrupts naive attacks, it suffers from two fundamental architectural flaws:
+\begin{itemize}
+    \item \textbf{Single-Branch Decision Dependency:} Because inference halts at the very first branch crossing $\tau$, an adversary only needs to compromise a \textit{single} shallow candidate branch to hijack the entire inference pipeline. In multi-exit networks, shallow ICs have narrower receptive fields and lower feature abstraction, making them exceptionally susceptible to targeted bit-flips. By flipping fewer than 20 bits, an adversary can force an adversarial trigger $x \oplus \delta$ to produce an artificial high confidence ($c_{s_1}(x \oplus \delta) \ge 0.95$) at an early candidate branch. This induces an \textit{early-exit short-circuit}, terminating inference prematurely before deeper, uncorrupted, and more resilient layers are ever executed.
+    \item \textbf{Rigid Static Threshold Fragility:} The static threshold $\tau = 0.95$ is entirely decoupled from sample difficulty, domain shifts, or input noise. In practice, clean ambiguous inputs often fail to cross $\tau$, while poisoned inputs easily trigger false exits, making threshold tuning brittle across varying datasets.
+\end{itemize}
+
+\section{Our Solution: Two-Layer Defense Architecture}
+
+To eliminate the single-branch vulnerability of Aegis and provide end-to-end resilience against both non-adaptive and adaptive targeted bit-flip attacks, we propose a \textbf{Two-Layer Defense Architecture}:
+
+\subsection{Layer 1: Stochastic Branch Ensembling (SBE)}
+Instead of sequentially halting inference upon encountering an isolated overconfident branch, SBE evaluates all sampled candidate branches concurrently and aggregates their predictions through confidence-weighted soft consensus:
+\begin{enumerate}
+    \item \textbf{Candidate Pool Pruning:} On multi-exit backbones (e.g., 16-branch ResNet-32), early ICs attached to initial layers lack the depth required for robust representation ($\sim$10\% clean accuracy). We evaluate clean validation accuracy across all branches and prune the bottom $M$ weakest classifiers ($M = 4$), establishing a high-performing candidate pool:
+    \begin{equation}
+        \mathcal{B}_{\text{pool}} = \{B_i \mid \text{Acc}(B_i) \ge \gamma\}, \quad |\mathcal{B}_{\text{pool}}| = B - M = 12.
+    \end{equation}
+    \item \textbf{Dynamic Subset Selection:} For each input $x$, we draw an expanded subset $S$ of $C = 5$ candidate branches uniformly at random without replacement:
+    \begin{equation}
+        S = \{B_{(1)}, B_{(2)}, \dots, B_{(C)}\} \sim \text{Uniform}(\mathcal{B}_{\text{pool}}, C).
+    \end{equation}
+    \item \textbf{Confidence-Weighted Soft Consensus:} For each sampled branch $k \in S$, we obtain class probabilities $P_k(x) = \text{Softmax}(z_k(x))$ and peak confidence weight $w_k = \max_c P_{k, c}(x)$. Rather than unweighted voting, predictions are aggregated via confidence-weighted averaging:
+    \begin{equation}
+        P_{\text{ens}}(x) = \frac{\sum_{k \in S} w_k \cdot P_k(x)}{\sum_{k \in S} w_k}, \quad \hat{y} = \arg\max_{c} P_{\text{ens}, c}(x).
+    \end{equation}
+\end{enumerate}
+By requiring a multi-branch consensus, SBE ensures that an isolated hijacked branch cannot dictate the classification outcome, as its vote is diluted and outvoted by the remaining clean branches in $S$. Furthermore, SBE completely eliminates the brittle static threshold $\tau$.
+
+% TODO: INSERT DIAGRAM HERE
+% [Indication: Insert a block diagram showing the ResNet-32 architecture divided into sequential blocks, with SHA-256 checksum modules attached. Show how a failure in Block K disables ICs K through N, routing the final prediction through a stochastic ensemble of ICs 0 through K-1.]
+
+\subsection{Layer 2: Sequential Checksum-Based Self-Healing}
+While SBE effectively neutralizes non-adaptive attacks, an adaptive adversary with knowledge of the ensemble can optimize joint bit-flips across multiple branches or target the shared network stem to corrupt all downstream features simultaneously. To counteract this, Layer 2 incorporates an on-device \textbf{Sequential Block Verification and Truncation} mechanism. Because feature extraction is sequential, a bit-flip in an early block corrupts all subsequent blocks, but leaves preceding branches pristine. Thus, upon detecting an attack, we isolate the compromised segment and predict the result based entirely on the previous, uncompromised branches.
+
+\begin{enumerate}
+    \item \textbf{Sequential Backbone Partitioning \& Golden Hashing:} The ResNet backbone is partitioned into a sequence of disjoint blocks $\mathcal{F} = \{F_0, F_1, \dots, F_{N-1}\}$ (e.g., the stem and individual ResNet BasicBlocks). Before deployment, a golden SHA-256 hash $h_i^*$ is computed for each block based on its fixed-point weight bytes $W_{q, i}$:
+    \begin{equation}
+        h_i^* = \text{SHA-256}\left(\text{bytes}(W_{q, i})\right), \quad \forall i \in \{0, \dots, N-1\}.
+    \end{equation}
+    
+    \item \textbf{Runtime Truncation of Compromised ICs:} During inference, runtime hashes $h_i$ are continuously computed and compared. We identify the index of the \textit{first} compromised block in the sequence:
+    \begin{equation}
+        k^* = \min \{ i \mid h_i \neq h_i^* \}.
+    \end{equation}
+    If a block at index $k^*$ is compromised, it inherently corrupts the features fed to any Internal Classifier branching off at or after $k^*$. Therefore, the safe pool of candidate branches is severely truncated to only include ICs that precede the attack point (i.e., those that draw features from blocks unaffected by the flip):
+    \begin{equation}
+        \mathcal{B}_{\text{safe}} = \{ B_j \in \mathcal{B}_{\text{pool}} \mid j < k^* - 1 \}.
+    \end{equation}
+    If the stem itself is attacked ($k^* = 0$), all branches are deemed compromised ($\mathcal{B}_{\text{safe}} = \emptyset$), and the system falls back to a random output to prevent malicious hijacking.
+    
+    \item \textbf{Self-Healed Stochastic Consensus:} The active ensemble subset is dynamically drawn exclusively from the healthy, truncated pool ($S_{\text{safe}} \subseteq \mathcal{B}_{\text{safe}}$, with $|S_{\text{safe}}| = \min(C, |\mathcal{B}_{\text{safe}}|)$). The final classification relies only on these preceding safe branches:
+    \begin{equation}
+        P_{\text{healed}}(x) = \frac{\sum_{k \in S_{\text{safe}}} w_k \cdot P_k(x)}{\sum_{k \in S_{\text{safe}}} w_k}.
+    \end{equation}
+\end{enumerate}
+This sequential truncation strategy guarantees that poisoned features are isolated. The remaining clean ICs seamlessly absorb the inference load, enabling the network to self-heal its predictions with zero retraining and negligible cryptographic overhead.
+
+% TODO: INSERT TABLE/PLOT HERE
+% [Indication: Insert a table comparing the Attack Success Rate (ASR) of Undefended vs. Defended models for both non-adaptive and adaptive attacks. Additionally, include a plot showing the clean accuracy degradation (if any) when the defense is active vs. inactive.]
+
+\section{Conclusion}
+% Brief conclusion summarizing the effectiveness of the checksum + ensemble defense.
+This paper presented a highly effective defense against Targeted Bit Trojan attacks by employing a sequential block checksum mechanism combined with a stochastic ensemble of internal classifiers. By isolating poisoned network blocks and dynamically routing predictions through uncompromised branches, our solution provides robust self-healing capabilities against both adaptive and non-adaptive adversaries without complex retraining. 
+
+\end{document}

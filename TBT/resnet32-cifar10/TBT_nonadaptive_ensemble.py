@@ -173,32 +173,61 @@ net1=net1.cuda()
 # ============================================================
 import hashlib
 
-def get_internal_classifiers(model: torch.nn.Module):
-    ics = []
-    for name, module in model.named_modules():
-        if isinstance(module, quan_Linear) and getattr(module, 'out_features', 0) == 10:
-            ics.append(module)
-    return ics
+def get_backbone_blocks(model_wrapper: torch.nn.Module):
+    blocks = []
+    
+    # Extract the actual ResNet from the Sequential wrapper (Normalize_layer, ResNet)
+    if isinstance(model_wrapper, torch.nn.Sequential) and len(model_wrapper) >= 2:
+        model = model_wrapper[1]
+    else:
+        model = model_wrapper
 
-def compute_single_ic_checksum(module: torch.nn.Module) -> str:
+    # Index -1: The stem (if this is poisoned, ALL branches are poisoned)
+    stem = torch.nn.Sequential(model.conv_1_3x3, model.bn_1)
+    blocks.append(('stem', stem))
+    
+    # Indices 0 to 14: The 15 ResNetBasicblocks
+    for g in range(1, 4):
+        group = getattr(model, f'group{g}', [])
+        for i in range(len(group)):
+            blocks.append((f'block_{len(blocks)-1}', group[i]))
+            
+    # Index 15: The final classifier
+    blocks.append(('classifier', model.classifier))
+    return blocks
+
+def compute_module_checksum(module: torch.nn.Module) -> str:
     hasher = hashlib.sha256()
     for name, param in module.state_dict().items():
         hasher.update(param.detach().cpu().numpy().tobytes())
     return hasher.hexdigest()
 
-# Calculate Golden checksums for all 16 internal classifiers in the clean net BEFORE the attack
+# Calculate Golden checksums for the sequential blocks BEFORE the attack
 golden_checksums = {}
-_ics = get_internal_classifiers(net)
-for i, ic_module in enumerate(_ics):
-    golden_checksums[i] = compute_single_ic_checksum(ic_module)
+_blocks = get_backbone_blocks(net)
+for i, (name, mod) in enumerate(_blocks):
+    golden_checksums[name] = compute_module_checksum(mod)
 
-def verify_all_ics(model, golden_checksums) -> list:
-    compromised = []
-    _current_ics = get_internal_classifiers(model)
-    for i, ic_module in enumerate(_current_ics):
-        if compute_single_ic_checksum(ic_module) != golden_checksums.get(i, ""):
-            compromised.append(i)
-    return compromised
+def get_safe_pool_from_blocks(model, golden_checksums) -> list:
+    _current_blocks = get_backbone_blocks(model)
+    first_compromised_idx = -1
+    for i, (name, mod) in enumerate(_current_blocks):
+        if compute_module_checksum(mod) != golden_checksums.get(name, ""):
+            first_compromised_idx = i
+            break
+            
+    if first_compromised_idx == 0:
+        # Stem is compromised, all branches are poisoned. Safe pool is empty.
+        print("[CRITICAL] Stem poisoned. All branches compromised.")
+        return []
+    elif first_compromised_idx > 0:
+        # If block at index i is compromised, it feeds IC (i-1) and all subsequent ones.
+        # e.g., index 1 (group1[0]) computes features for IC 0. If it fails, IC 0 is unsafe.
+        k = first_compromised_idx - 1
+        print(f"[ALERT] Checksum failed at block index {first_compromised_idx}. Truncating safe pool to ICs 0 through {k-1}.")
+        return list(range(k))
+    else:
+        return list(range(16))
 
 trust_mask = torch.ones(3) # 1 = trusted, 0 = compromised
 
@@ -523,24 +552,23 @@ def validate_for_attack(val_loader, model, criterion, num_branch, xh):
     model.eval()
     output_summary = [] # init a list for output summary
 
-    # --- DEFENSE: Intra-Model IC Checksum ---
-    # We only use 'model' (which is 'net'). We compute checksums for its internal classifiers
-    # and exclude the compromised ones from the ensemble voting pool.
-    compromised_ics = verify_all_ics(model, golden_checksums)
+    # --- DEFENSE: Sequential Block Checksum & Early-Exit Truncation ---
+    safe_pool_full = get_safe_pool_from_blocks(model, golden_checksums)
     
-    for idx in range(num_branch):
-        if idx in compromised_ics:
-            print(f"[ALERT] Internal Classifier {idx} checksum FAILED — voting it OUT of the ensemble.")
+    # Check which ICs were truncated
+    compromised_ics = [idx for idx in range(num_branch) if idx not in safe_pool_full]
+    for idx in compromised_ics:
+        print(f"[ALERT] IC {idx} receives poisoned data — voting it OUT of the ensemble.")
 
-    # Filter index_list to only include healthy ICs
-    safe_pool = [idx for idx in index_list[4:] if idx not in compromised_ics]
+    # Apply our standard heuristic: prefer deeper safe ICs (skip the first 4 if possible)
+    safe_pool = [idx for idx in safe_pool_full if idx >= 4]
     
-    # If safe_pool is empty, fallback to any healthy IC from the entire index list
+    # If safe_pool is empty after skipping first 4, fallback to any healthy IC
     if not safe_pool:
-        safe_pool = [idx for idx in index_list if idx not in compromised_ics]
+        safe_pool = safe_pool_full
 
     if not safe_pool:
-        print("[CRITICAL] All Internal Classifiers compromised — serving random outputs as last resort.")
+        print("[CRITICAL] All branches poisoned — serving random outputs as last resort.")
         inference_model = None
     else:
         inference_model = model
@@ -650,19 +678,19 @@ def validate_clean_defended(val_loader, model, criterion, num_branch):
 
     model.eval()
 
-    # --- Self-Healing Intra-Model IC Checksum ---
-    compromised_ics = verify_all_ics(model, golden_checksums)
+    # --- Self-Healing Sequential Block Checksum ---
+    safe_pool_full = get_safe_pool_from_blocks(model, golden_checksums)
+    
+    compromised_ics = [idx for idx in range(num_branch) if idx not in safe_pool_full]
+    for idx in compromised_ics:
+        print(f"[ALERT][Clean] IC {idx} receives poisoned data — voting it OUT.")
 
-    for idx in range(num_branch):
-        if idx in compromised_ics:
-            print(f"[ALERT][Clean] Internal Classifier {idx} checksum FAILED — voting it OUT.")
-
-    safe_pool = [idx for idx in index_list[4:] if idx not in compromised_ics]
+    safe_pool = [idx for idx in safe_pool_full if idx >= 4]
     if not safe_pool:
-        safe_pool = [idx for idx in index_list if idx not in compromised_ics]
+        safe_pool = safe_pool_full
 
     if not safe_pool:
-        print("[CRITICAL][Clean] All Internal Classifiers compromised — serving random outputs.")
+        print("[CRITICAL][Clean] All branches poisoned — serving random outputs.")
         inference_model = None
     else:
         inference_model = model

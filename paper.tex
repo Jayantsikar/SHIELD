@@ -4,42 +4,76 @@
 \usepackage{amsmath,amssymb}
 \usepackage{booktabs}
 \usepackage{multirow}
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{tabularx}
+
+\usepackage{verbatim}
 \usepackage{algorithm}
+%\usepackage[noend]{algorithmic}
 \usepackage{algorithmic}
+\usepackage{etoolbox}
+\patchcmd{\maketitle}{\@copyrightspace}{}{}{}
+\usepackage{mathptmx} % This is Times font
+\newcommand{\ignore}[1]{}
+\usepackage{fancyhdr}
+\usepackage[normalem]{ulem}
+%\usepackage[hyphens]{url}
+\usepackage{hyperref}
+\usepackage{comment}
+\usepackage[table]{xcolor}
+\usepackage{listings}
+\usepackage{tabularx}
+\usepackage{setspace}
+\usepackage{graphicx}
+\usepackage{subcaption}
+
+\usepackage{caption}
+\captionsetup{font=footnotesize}
+
 
 % Format section headings bolder and larger for clear visual section transitions
-\makeatletter
-\def\section{\@startsection{section}{1}{\z@}{3.5ex plus 1.5ex minus 1.0ex}%
-{1.2ex plus 1.0ex minus 0ex}{\normalfont\large\bfseries\centering}}
-\def\subsection{\@startsection{subsection}{2}{\z@}{2.2ex plus 1.0ex minus 0.5ex}%
-{0.8ex plus 0.5ex minus 0ex}{\normalfont\normalsize\bfseries}}
-\makeatother
+%\makeatletter
+%\def\section{\@startsection{section}{1}{\z@}{3.5ex plus 1.5ex minus 1.0ex}%
+%{1.2ex plus 1.0ex minus 0ex}{\normalfont\large\bfseries\centering}}
+%\def\subsection{\@startsection{subsection}{2}{\z@}{2.2ex plus 1.0ex minus 0.5ex}%
+%{0.8ex plus 0.5ex minus 0ex}{\normalfont\normalsize\bfseries}}
+%\makeatother
 
 \title{ResilientDNN: Stochastic Ensembling and Self-Healing for Multi-Exit DNNs Against Targeted Bit-Flip Attacks}
-\author{\IEEEauthorblockN{Intentionally left blank}
-\IEEEauthorblockA{\textit{Intentionally left blank} \\
-\textit{Intentionally left blank} \\
-City, Country \\
-email address or ORCID}
-}
+%\author{\IEEEauthorblockN{Intentionally left blank}
+%\IEEEauthorblockA{\textit{Intentionally left blank} \\ 
+%\textit{Intentionally left blank} \\
+%City, Country \\
+%email address or ORCID}
+%}
 
+\setlength{\textheight}{24.6cm}
 \begin{document}
 
+\setstretch{0.91}
 \maketitle
 
 % ==============================================================================
 % ABSTRACT
 % ==============================================================================
 \begin{abstract}
-Deep Neural Networks (DNNs) deployed in security-critical edge environments are acutely vulnerable to physical parameter tampering via \textbf{Targeted Bit-Flip Attacks (TBFAs)}, such as Targeted Bit-flip Trojan (TBT) and ProFlip, induced by hardware fault-injection exploits like Rowhammer. In multi-exit Shallow-Deep Networks (SDNs), this vulnerability is substantially amplified: shallow intermediate classifiers (ICs) possess limited feature representations, enabling adversaries to craft low-magnitude triggers that induce artificial high-confidence early-exit short-circuits before deeper, more resilient layers can inspect the input.
+%Deep Neural Networks (DNNs) in edge environments are vulnerable to \textbf{Targeted Bit-Flip Attacks (TBFAs)}. In multi-exit architectures, this vulnerability is amplified because adversaries can exploit shallow branches to force premature early exits.  While existing defenses introduce randomized dynamic early exits, they still rely on a fragile single-branch decision, allowing an attacker to compromise the entire system by attacking just one branch. To resolve this, we propose a resilient \textbf{Two-Phase Defense Architecture}. \textbf{Phase 1} introduces \textbf{Stochastic Branch Ensembling (SBE)}, which samples a subset of candidate branches and aggregates their predictions via a confidence-weighted consensus. \textbf{Phase 2} adds an on-device \textbf{Checksum-Based Self-Healing Mechanism} that verifies parameter integrity; upon detecting tampering, compromised branches are quarantined, allowing the remaining clean branches to self-heal predictions.  Evaluated on the CIFAR-10 benchmark, our architecture reduces the Attack Success Rate (ASR) to \textbf{15.09\%} while preserving a clean accuracy of \textbf{83.02\%} under aggressive attacks, demonstrating robust defense against physical bit-tampering.
 
-While existing state-of-the-art defenses like \textbf{Aegis} introduce randomized dynamic early exits, they suffer from an inherent \textbf{single-branch decision dependency} and rigid static confidence thresholds ($\tau = 0.95$), allowing an adversary to compromise the entire system by corrupting only a single shallow branch. To resolve these vulnerabilities, we propose a resilient \textbf{Two-Layer Defense Architecture}: \textbf{Layer~1} introduces \textbf{Stochastic Branch Ensembling (SBE)}, which dynamically samples a subset of candidate branches and aggregates their predictions via confidence-weighted soft consensus, eliminating the brittle threshold and diluting isolated corrupted predictions. \textbf{Layer~2} incorporates an on-device \textbf{Checksum-Based Self-Healing Mechanism} that continuously verifies quantized parameters against golden cryptographic fingerprints; upon detecting bit-level tampering, compromised branches are dynamically quarantined from the candidate pool, enabling the remaining clean ICs to self-heal predictions with zero retraining.
 
-Evaluated on quantized ResNet-32 across CIFAR-10 and STL-10 benchmarks under non-adaptive and adaptive TBT attacks, our architecture slashes adaptive ASR from 38.50\% (baseline Aegis) to \textbf{15.09\%} while preserving clean data accuracy at \textbf{83.02\%} under worst-case joint adversarial optimization, and achieves \textbf{11.67\%} ASR with \textbf{89.93\%} clean accuracy under non-adaptive attacks. On STL-10, our defense slashes adaptive ASR from 31.00\% to \textbf{13.91\%} while maintaining \textbf{74.19\%} clean accuracy, demonstrating robust mitigation against physical bit-tampering attacks.
+Deep neural networks (DNNs) are increasingly used on edge devices, often sharing hardware resources with other applications and services. A bit-flip attack changes one or more bits in data involved in DNN inference. The attack does not require changes to the DNN software; flipping a few carefully selected bits in model weights, activations, or control data can change the final prediction. This makes DNNs running on exposed edge devices vulnerable to targeted bit-flip attacks (TBFAs), where specific bits are selected to cause misclassification or affect the reliability of inference. This vulnerability is particularly concerning in multi-exit architectures, where an attacker can target shallow branches and trigger incorrect early exits. Existing defenses based on randomized dynamic early exits reduce this risk to some extent, but the final decision still depends on a single selected branch. Consequently, compromising one branch can affect the overall prediction.
+
+To address this limitation, we propose a two-phase defense architecture. In the first phase, Stochastic Branch Ensembling (SBE) selects a subset of candidate branches and combines their predictions using a confidence-weighted consensus. In the second phase, an on-device checksum-based self-healing mechanism monitors the integrity of model parameters. When tampering is detected, the affected branch is quarantined, and predictions are obtained from the remaining branches. We evaluate the proposed architecture on the CIFAR-10 dataset under aggressive bit-flip attacks. The proposed approach achieves an attack success rate (ASR) of 15.09\% while maintaining a clean accuracy of 83.02\%, indicating that the architecture can effectively limit the impact of physical bit tampering.
+
+
 \end{abstract}
 
 \begin{IEEEkeywords}
-Deep Neural Networks, Targeted Bit-Flip Attacks, Fault Injection, Multi-Exit Networks, Dynamic Early-Exit, Stochastic Ensembling, Model Integrity, Self-Healing.
+DNN, Targeted Bit-Flip Attacks, Fault Injection, Multi-Exit Networks, Dynamic Early-Exit, Stochastic Ensembling, Model Integrity, Self-Healing.
 \end{IEEEkeywords}
 
 
@@ -47,24 +81,36 @@ Deep Neural Networks, Targeted Bit-Flip Attacks, Fault Injection, Multi-Exit Net
 % SECTION 1: INTRODUCTION
 % ==============================================================================
 \section{Introduction}
-The widespread deployment of Deep Neural Networks (DNNs) in security- and safety-critical edge environments—such as autonomous navigation, healthcare devices, robotics, and industrial process control—has elevated physical hardware security into a primary concern. Recent studies demonstrate that DNNs running on edge memory systems are acutely vulnerable to hardware-level fault injection attacks, notably \textbf{Targeted Bit-Flip Attacks (TBFAs)} induced via DRAM disturbance vulnerabilities such as Rowhammer~\cite{kim2014rowhammer}. By flipping fewer than 20 parameter bits out of millions stored in memory, an adversary can implant a stealthy Trojan backdoor (e.g., Targeted Bit-flip Trojan, TBT~\cite{rakin2020tbt}, and ProFlip~\cite{chen2021proflip}) that forces inputs containing a specific adversarial trigger to be misclassified into an attacker-selected target class $y_t$, while maintaining normal Clean Data Accuracy (CDA) on unpoisoned inputs.
+%The widespread deployment of Deep Neural Networks (DNNs) in security and safety-critical edge environments such as autonomous navigation, healthcare devices, robotics, and industrial process control has elevated physical hardware security into a primary concern. Recent studies demonstrate that DNNs running on edge memory systems are acutely vulnerable to hardware-level fault injection attacks, notably \textbf{Targeted Bit-Flip Attacks (TBFAs)} induced via DRAM disturbance vulnerabilities such as Rowhammer~\cite{kim2014rowhammer}. By flipping fewer than twenty parameter bits out of millions stored in memory, an adversary can implant a stealthy Trojan backdoor (e.g., Targeted Bit-flip Trojan, TBT~\cite{rakin2020tbt}, and ProFlip~\cite{chen2021proflip}) that forces inputs containing a specific adversarial trigger to be misclassified into an attacker-selected target class, while maintaining normal Clean Data Accuracy (CDA) on unpoisoned inputs.
 
-To reduce inference latency on edge devices, modern architectures frequently adopt multi-exit networks such as Shallow-Deep Networks (SDNs)~\cite{kaya2019sdn} and BranchyNet~\cite{teerapittayanon2016branchynet}, which attach early intermediate classifiers (ICs) to intermediate hidden layers. However, this architectural paradigm significantly magnifies susceptibility to physical bit-tampering. Because early ICs possess limited receptive fields and shallower feature representations, an adversary can easily engineer a small trigger patch that forces an early IC to output an artificially high confidence. In standard threshold-based exit frameworks, this triggers an erroneous \textit{early-exit short-circuit}, prematurely terminating inference before deeper, more resilient feature abstractions can inspect the input.
+Deep neural networks (DNNs) are increasingly being deployed on edge devices alongside other shared services and applications \cite{zhou2022deep}. Their use in security critical and safety-critical applications, including autonomous navigation, healthcare devices, robotics, and industrial control systems, makes the security of the underlying hardware an important concern. In these systems, attacks at the hardware level can affect the integrity of DNN inference and, consequently, the decisions made by the edge device. Unlike conventional software-based attacks, hardware-level attacks can directly manipulate the physical computation and memory infrastructure on which DNN models execute, often without requiring modification of the model architecture or inference software. Recent studies have demonstrated that DNNs running on edge memory systems are particularly vulnerable to hardware-level fault injection attacks, notably Targeted Bit-Flip Attacks (TBFAs) exploiting DRAM disturbance vulnerabilities such as Rowhammer ~\cite{kim2014rowhammer}. By repeatedly accessing carefully selected DRAM rows, an adversary can induce bit flips in physically adjacent memory rows and thereby corrupt selected bits of DNN parameters stored in memory.
 
-To defend against TBFAs, the current state-of-the-art framework \textbf{Aegis}~\cite{wang2023aegis} introduces a randomized dynamic early-exit mechanism that randomly samples $C$ candidate branches and halts at the first branch exceeding a confidence threshold $\tau = 0.95$. Nevertheless, Aegis suffers from a critical vulnerability: \textbf{single-branch decision dependency}. Because inference halts at the very first candidate branch that crosses the threshold, an adversary only needs to compromise a single shallow branch to hijack the entire model. Under white-box adaptive attacks where the attacker optimizes bit flips against all internal branches, the Attack Success Rate (ASR) of Aegis escalates dramatically to 31.10\% on CIFAR-10 and 31.00\% on STL-10, with significant clean accuracy degradation.
+A bit-flip attack deliberately changes one or more bits in the data used during DNN inference. The attacker does not necessarily need to modify the DNN program itself; corrupting a few carefully selected bits in weights, activations, or control data can be enough to alter the final prediction. Despite the extremely small number of modified bits, the impact of such attacks can be substantial. In particular, an attacker may require fewer than twenty parameter-bit flips out of millions of parameters to implant a stealthy Trojan backdoor, as demonstrated by attacks such as the Targeted Bit-flip Trojan (TBT) ~\cite{rakin2020tbt} and ProFlip ~\cite{chen2021proflip}. These attacks strategically identify highly sensitive parameter bits whose alteration can significantly change the model's decision boundary while minimizing their impact on normal inference behavior. As a result, the compromised DNN can preserve high Clean Data Accuracy (CDA) on benign, untriggered inputs, making the attack difficult to detect using conventional accuracy-based validation. At the same time, inputs containing a carefully designed adversarial trigger can be systematically misclassified into an attacker-selected target class. The combination of stealthy model manipulation, hardware-level vulnerabilities, and targeted misclassification makes TBFA induced backdoors a serious security concern for DNNs deployed on resource constrained and safety critical edge systems.
 
-To eliminate these fundamental bottlenecks, we propose \textbf{ResilientDNN}, a resilient two-layer defense architecture that combines stochastic ensembling with autonomous on-device self-healing. Specifically, our key technical contributions and works are structured as follows:
+
+%To reduce inference latency on edge devices, modern architectures frequently adopt multi-exit networks such as Shallow-Deep Networks (SDNs)~\cite{kaya2019sdn} and BranchyNet~\cite{teerapittayanon2016branchynet}, which attach early intermediate classifiers (ICs) to intermediate hidden layers. However, this architectural paradigm significantly magnifies susceptibility to physical bit-tampering. Because early ICs possess limited receptive fields and shallower feature representations, an adversary can easily engineer a small trigger patch that forces an early IC to output an artificially high confidence. In standard threshold-based exit frameworks, this triggers an erroneous \textit{early-exit short-circuit}, prematurely terminating inference before deeper, more resilient feature abstractions can inspect the input.
+
+To reduce inference latency on edge devices, recent DNN architectures often use multi-exit networks, such as Shallow-Deep Networks (SDNs) \cite{kaya2019sdn} and BranchyNet \cite{teerapittayanon2016branchynet}, which place intermediate classifiers (ICs) at different depths of the network. However, these additional exit points also increase the vulnerability to physical bit tampering. Since early ICs operate on shallower feature representations and have limited receptive fields, an attacker can craft a small trigger patch that causes an early IC to produce high confidence for an incorrect class. In conventional threshold-based exit mechanisms, this high-confidence prediction can trigger an \textit{early exit} short circuit, stopping inference before the deeper layers can further process the input and potentially correct the prediction.
+
+
+%To defend against TBFAs, the current state-of-the-art framework \textbf{Aegis}~\cite{wang2023aegis} introduces a randomized dynamic early-exit mechanism that randomly samples $C$ candidate branches and halts at the first branch exceeding a confidence threshold ($\tau = 0.95$). Nevertheless, Aegis suffers from a critical vulnerability called \textbf{single-branch decision dependency}. Because inference halts at the very first candidate branch that crosses the threshold, an adversary only needs to compromise a single shallow branch to hijack the entire model. 
+
+To defend against TBFAs, the state-of-the-art framework \textbf{Aegis} \cite{wang2023aegis} uses a randomized dynamic early-exit mechanism. At each inference, it randomly selects $C$ candidate branches and terminates at the first branch whose confidence exceeds a threshold of $\tau = 0.95$. However, this design has a key weakness, which we refer to as \textbf{single-branch decision dependency}. Since the final prediction is determined by the first candidate branch that meets the threshold, compromising a single shallow branch can be sufficient to influence the prediction of the entire network. Under white-box adaptive attacks where the attacker optimizes bit flips against all internal branches, the Attack Success Rate (ASR) defined as the fraction of triggered inputs misclassified into the attacker's target class of Aegis escalates dramatically to 31.10\% on CIFAR-10, with significant clean accuracy degradation.
+
+To eliminate these fundamental bottlenecks, we propose \textbf{ResilientDNN}, a resilient two-phase defense architecture that combines stochastic ensembling with autonomous on-device self-healing.
+
+Main contributions of our work are as follows:
 
 \begin{itemize}
-    \item \textbf{Layer 1: Stochastic Branch Ensembling (SBE):} We eliminate the fragile single-branch decision rule by introducing dynamic multi-branch soft consensus. For each incoming input $x$, SBE randomly samples $C = 5$ candidate branches from a pre-screened pool $\mathcal{B}_{\text{pool}}$ and aggregates their predictions using confidence-weighted averaging. This eliminates the brittle static threshold $\tau = 0.95$ and dilutes the influence of isolated compromised branches.
+    \item \textbf{Phase 1 - Stochastic Branch Ensembling (SBE):} We eliminate the fragile single-branch decision rule by introducing dynamic multi-branch soft consensus. For each incoming input $x$, SBE randomly samples $C = 5$ candidate branches from a pre-screened pool $\mathcal{B}_{\text{active}}$ and aggregates their predictions using confidence-weighted averaging. This eliminates the brittle static threshold $\tau = 0.95$ and dilutes the influence of isolated compromised branches.
     
-    \item \textbf{Layer 2: Checksum-Based Self-Healing Quarantine:} To defeat adaptive adversaries who jointly optimize bit flips across branches, Layer~2 integrates an on-device parameter integrity verification system. Leveraging the deterministic byte representation of 8-bit quantized weights ($W_q \in \mathbb{Z}^8$), cryptographic SHA-256 digests are verified against immutable golden fingerprints in secure memory. Once bit tampering is detected, the corrupted branch is quarantined via a binary trust mask ($\mu_k = 0$), enabling the network to self-heal predictions with zero retraining and zero rollback overhead.
+    \item \textbf{Phase 2 - Checksum-Based Self-Healing Quarantine:} To defeat adaptive adversaries who jointly optimize bit flips across branches, Phase 2 integrates an on-device parameter integrity verification system. Leveraging the deterministic byte representation of 8-bit quantized weights ($W_q \in \mathbb{Z}^8$), cryptographic SHA-256 digests are verified against immutable golden fingerprints in secure memory. Once bit tampering is detected, the corrupted branch is quarantined via a binary trust mask ($\mu_k = 0$), enabling the network to self-heal predictions with zero retraining and zero rollback overhead.
     
-    \item \textbf{Decoupled Dual-Algorithm Formalization:} We formalize the defense into two autonomous, modular algorithms: Algorithm~\ref{alg:sbe_inference} (governing Layer~1 stochastic ensemble inference) and Algorithm~\ref{alg:checksum_quarantine} (executing Layer~2 intra-model checksum verification and safe pool quarantine).
+    \item \textbf{Decoupled Dual-Algorithm Formalization:} We formalize the defense into two autonomous, modular algorithms: Algorithm~\ref{alg:sbe_inference} (governing Phase 1 stochastic ensemble inference) and Algorithm~\ref{alg:checksum_quarantine} (executing Phase 2 intra-model checksum verification and safe pool quarantine).
     
     \item \textbf{Negligible Edge Hardware Overhead:} We show that storing golden hashes for all 16 IC heads requires merely $512\text{ bytes}$ of secure ROM/TPM storage, and on-device hash verification consumes less than $5\,\mu\text{s}$ per IC, guaranteeing minimal computational and memory burden for edge deployment.
     
-    \item \textbf{Extensive Empirical Validation:} We benchmark our architecture on quantized ResNet-32 across CIFAR-10 and STL-10 under non-adaptive and white-box adaptive TBT attacks. ResilientDNN slashes adaptive ASR from 38.50\% (Aegis baseline) to \textbf{15.09\%} on CIFAR-10 and from 31.00\% to \textbf{13.91\%} on STL-10, while preserving clean accuracy at \textbf{83.02\%} and \textbf{74.19\%}, outperforming all prior binarization and dynamic early-exit baselines.
+    \item \textbf{Extensive Empirical Validation:} We benchmark our architecture on quantized ResNet-32 on CIFAR-10 under non-adaptive and white-box adaptive TBT attacks. ResilientDNN slashes adaptive ASR from 38.50\% (Aegis baseline) to \textbf{15.09\%} while preserving clean accuracy at \textbf{83.02\%}, outperforming all prior binarization and dynamic early-exit baselines.
 \end{itemize}
 
 
@@ -72,6 +118,63 @@ To eliminate these fundamental bottlenecks, we propose \textbf{ResilientDNN}, a 
 % SECTION 2: THREAT MODEL AND PROBLEM FORMULATION
 % ==============================================================================
 \section{Threat Model and Problem Formulation}
+
+An attacker can manipulate a small number of carefully selected DNN parameter bits so that an image containing a specific trigger, such as a tiger image with an attacker-defined trigger is misclassified as a target class such as cat, while other benign animal images continue to be classified correctly. This kind of attack pose serious issue Thus, the attack can preserve high Clean Data Accuracy (CDA) on normal inputs while exhibiting a high attack success rate for triggered inputs. Table \ref{tab:real_world_impact} list potential real-world consequences of targeted DNN miss- classification in security critical and safety critical applications.
+
+\begin{table}[tb!]
+\centering
+\caption{Potential real world consequences of targeted DNN miss classification in security and safety-critical applications \cite{joseph2018adversarial}.}
+\label{tab:real_world_impact}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{|p{2.2cm} |p{4.2cm} |p{5.3cm}|}
+\hline
+\textbf{Application} & \textbf{Possible Misclassification} & \textbf{Potential Real-World Consequence} \\
+\hline
+Autonomous vehicles &
+Stop sign $\rightarrow$ speed-limit sign; pedestrian $\rightarrow$ background; vehicle $\rightarrow$ harmless object &
+Failure to brake, inappropriate acceleration, or collision \\ \hline
+
+ADAS &
+Pedestrian $\rightarrow$ non-hazardous object &
+Delayed or missed collision warning and braking \\ \hline
+
+Robotics &
+Human $\rightarrow$ background/object &
+Robot may fail to stop or avoid a person \\ \hline
+
+Healthcare AI &
+Abnormal lesion $\rightarrow$ benign tissue &
+Delayed diagnosis or inappropriate treatment \\ \hline
+
+Industrial inspection &
+Defective component $\rightarrow$ normal component &
+Faulty products may pass quality control \\ \hline
+
+Surveillance \& security &
+Unauthorized person $\rightarrow$ authorized person  &
+Incorrect access control or security response \\ \hline
+
+Agricultural robots &
+Diseased crop $\rightarrow$ healthy crop &
+Disease may remain undetected and spread \\ \hline
+
+Drone navigation &
+Obstacle $\rightarrow$ non-obstacle &
+Collision, unsafe trajectory, or mission failure \\ \hline
+
+Fire \& smoke detection &
+Fire/smoke $\rightarrow$ normal scene &
+Delayed alarm and potentially greater property damage \\ \hline
+
+Defense perception &
+Target $\rightarrow$ non-target object &
+Incorrect downstream detection, tracking, or response \\ \hline
+
+\end{tabular}%
+}
+\vspace{-0.3cm}
+\end{table}
+
 
 \subsection{Adversary Objectives}
 Let $f(\cdot; \mathcal{W}): \mathcal{X} \to \mathcal{Y}$ denote a quantized multi-exit DNN parameterized by weights $\mathcal{W}$. The adversary seeks to perturb a minimal subset of parameter bits $\Delta \mathcal{W}$ in physical memory such that:
@@ -106,24 +209,59 @@ We evaluate two rigorous adversarial knowledge regimes:
 % ==============================================================================
 \section{Background and Existing Solutions}
 
-\subsection{Multi-Exit Neural Networks}
-Multi-exit architectures, such as Shallow-Deep Networks (SDNs)~\cite{kaya2019sdn} and BranchyNet~\cite{teerapittayanon2016branchynet}, augment a feed-forward backbone by attaching $B$ internal classifier (IC) heads $\{B_0, B_1, \dots, B_{B-1}\}$ to intermediate hidden layers, as depicted in Fig.~\ref{fig:sdn_architecture}. Each IC branch maps intermediate representations into class prediction probabilities, enabling "easy" samples to exit early, reducing computational latency and memory bandwidth consumption on edge hardware.
+Hardware-level attacks expose a fundamental vulnerability of DNNs by exploiting faults in memories, weights, and computation rather than modifying the model software.
+Prior studies have shown that techniques such as RowHammer and fault injection can induce targeted bit flips in DNN parameters and significantly alter inference outcomes \cite{hong2019terminal,yao2020deephammer}.
+These attacks are particularly concerning because carefully selected flips can cause severe degradation or targeted misclassification with only a small number of corrupted bits.
+Recent work has therefore explored hardware-assisted defenses to detect, tolerate, or recover from such faults, highlighting the need for resilient DNN architectures \cite{luo2021deepstrike,khoshavi2022hardenn}.
 
-\begin{figure}[!ht]
+\subsection{Multi-Exit Neural Networks}
+Multi-exit architectures, such as Shallow-Deep Networks (SDNs)~\cite{kaya2019sdn} and BranchyNet~\cite{teerapittayanon2016branchynet}, augment a feed-forward backbone by attaching $B$ internal classifier (IC) heads $\{B_0, B_1, \dots, B_{B-1}\}$ to intermediate hidden layers, as depicted in Fig.~\ref{fig:sdn_architecture}. 
+
+\begin{comment}
+
+
+Each IC branch maps intermediate representations into class prediction probabilities, enabling ``easy'' samples to exit early, reducing computational latency and memory bandwidth consumption on edge hardware. Key properties of SDNs~\cite{kaya2019sdn} include:
+\begin{itemize}
+    \item \textbf{Adaptive Inference Depth:} SDNs allow each input to exit at an intermediate layer when the attached IC produces a sufficiently confident prediction, avoiding unnecessary computation through deeper layers.
+    \item \textbf{Overthinking Mitigation:} By enabling early exits, SDNs reduce the ``negative overthinking'' phenomenon where additional depth degrades prediction quality on already well-classified samples.
+    \item \textbf{Lightweight IC Design:} Each internal classifier typically consists of a small convolutional feature reduction block followed by a fully connected projection layer, adding minimal parameter overhead to the backbone.
+    \item \textbf{Joint Training Objective:} All ICs are trained jointly with the final classifier using a weighted cross-entropy loss, ensuring that intermediate representations remain discriminative at every exit point.
+    \item \textbf{Latency-Accuracy Trade-off:} SDNs provide a configurable trade-off between inference latency and prediction accuracy by adjusting the confidence threshold $\tau$ that governs early-exit decisions.
+\end{itemize}
+\end{comment}
+
+Each IC takes the intermediate feature representation produced by the backbone and generates class probabilities. If the prediction is sufficiently confident, the input can exit at that point instead of being processed by the remaining layers, thereby reducing inference latency and memory traffic on edge devices. The main characteristics of SDNs \cite{kaya2019sdn} are as follows:
+
+\begin{itemize}
+\item \textbf{Adaptive Inference Depth:} An input can exit at an intermediate layer when the corresponding IC produces a sufficiently confident prediction. This avoids unnecessary computation in the deeper layers.
+
+\item \textbf{Reduced Overthinking:} Early exits can avoid the ``negative overthinking'' effect, in which processing an already correctly classified sample through additional layers may reduce the prediction quality.
+
+\item \textbf{Lightweight ICs:} An IC generally uses a small convolutional feature-reduction block followed by a fully connected layer. Thus, the additional parameters introduced by the intermediate classifiers are relatively small compared with the backbone network.
+
+\item \textbf{Joint Training:} The ICs and the final classifier are trained together using a weighted cross-entropy loss. This allows the intermediate layers to learn representations that are useful for classification at different depths.
+
+\item \textbf{Latency-Accuracy Trade-off:} The confidence threshold $\tau$ controls when an input exits the network. Changing this threshold provides a trade-off between inference latency and prediction accuracy.
+
+\end{itemize}
+
+
+\begin{figure}[tb!]
 \centering
-\includegraphics[width=\linewidth]{figures/fig_sdn_architecture.pdf}
+\includegraphics[width=\linewidth]{figures/fig_sdn_architecture_mod.png}
 \caption{Structure of a Shallow-Deep Network (SDN) featuring multiple internal classifiers (ICs) attached to intermediate layers along the shared backbone.}
+\vspace{-0.3cm}
 \label{fig:sdn_architecture}
 \end{figure}
 
 \subsection{Current Defense Baseline: Aegis}
-To mitigate targeted bit-flip attacks, the state-of-the-art framework \textbf{Aegis}~\cite{wang2023aegis} introduces a \textit{Randomized Dynamic Early-Exit} mechanism over an SDN backbone:
+To mitigate targeted bit-flip attacks, the state-of-the-art framework \textbf{Aegis}~\cite{wang2023aegis} introduces a \textit{Randomized Dynamic Early-Exit} mechanism over an SDN backbone; The Aegis uses:
 \begin{enumerate}
     \item \textbf{Multi-Branch Logit Computation:} The network produces intermediate logit vectors $\mathbf{z}(x) = [z_0(x), \dots, z_{B-1}(x)]$. Branch softmax probabilities and peak confidences are obtained as:
     \begin{equation}
         P_i(x) = \text{Softmax}(z_i(x)), \quad c_i(x) = \max_{c} P_{i, c}(x).
     \end{equation}
-    \item \textbf{Randomized Branch Sampling:} Aegis uniformly samples a candidate subset of $C = 3$ branches from a pre-selected high-performing pool $\mathcal{B}_{\text{pool}} \subset \{B_0, \dots, B_{B-1}\}$ to introduce runtime execution graph unpredictability.
+    \item \textbf{Randomized Branch Sampling:} Aegis uniformly samples a candidate subset of $C = 3$ branches from a pre-selected high-performing pool $\mathcal{B}_{\text{active}} \subset \{B_0, \dots, B_{B-1}\}$ to introduce runtime execution graph unpredictability.
     \item \textbf{Ordered Sequential Evaluation:} The candidate branches are sorted strictly by physical network depth from shallowest to deepest: $S = (s_1, s_2, \dots, s_C)$, where $\text{depth}(s_1) < \dots < \text{depth}(s_C)$.
     \item \textbf{Early-Exit Decision Rule:} Candidate branches in $S$ are evaluated one-by-one. Inference terminates at the first branch whose confidence satisfies:
     \begin{equation}
@@ -132,45 +270,56 @@ To mitigate targeted bit-flip attacks, the state-of-the-art framework \textbf{Ae
     yielding output $\hat{y} = \hat{y}_{s_{i^*}}$. If no candidate branch crosses $\tau = 0.95$, inference defaults to the deepest candidate branch: $\hat{y} = \hat{y}_{s_C}$.
 \end{enumerate}
 
-\paragraph{Critical Limitations of Aegis}
-Aegis suffers from an inherent \textbf{single-branch decision dependency}. Because inference halts at the very first branch exceeding $\tau$, an adversary only needs to compromise a \textit{single} shallow candidate branch to hijack the entire inference pipeline. In multi-exit networks, shallow ICs have narrower receptive fields and lower feature abstraction, making them exceptionally vulnerable to low-cost bit flips. By flipping fewer than 20 bits, an adversary can force an adversarial trigger $x \oplus \delta$ to produce an artificial confidence $c_{s_1}(x \oplus \delta) \ge 0.95$, triggering an \textit{early-exit short-circuit} that prematurely halts computation before deeper, uncorrupted, and more resilient layers are ever reached. Furthermore, the defense is fragilely bound to the rigid static threshold $\tau = 0.95$, which cannot adapt to input complexity or domain shifts.
+\subsection{Critical Limitations of Aegis}
+%Aegis suffers from an inherent \textbf{single-branch decision dependency}. Because inference halts at the very first branch exceeding $\tau$, an adversary only needs to compromise a \textit{single} shallow candidate branch to hijack the entire inference pipeline. In multi-exit networks, shallow ICs have narrower receptive fields and lower feature abstraction, making them exceptionally vulnerable to low-cost bit flips. By flipping fewer than 20 bits, an adversary can force an adversarial trigger $x \oplus \delta$ to produce an artificial confidence $c_{s_1}(x \oplus \delta) \ge 0.95$, triggering an \textit{early-exit short-circuit} that prematurely halts computation before deeper, uncorrupted, and more resilient layers are ever reached. Furthermore, the defense is fragilely bound to the rigid static threshold $\tau = 0.95$, which cannot adapt to input complexity or domain shifts.
 
+Aegis has an inherent \textbf{single-branch decision dependency}. Since inference stops at the first branch whose confidence exceeds $\tau$, compromising only one shallow candidate branch can affect the final prediction. This issue is particularly relevant in multi-exit networks because shallow ICs use less developed feature representations and have smaller receptive fields, making them more susceptible to targeted bit flips. For example, by flipping fewer than 20 bits, an attacker can cause a trigger input $x \oplus \delta$ to produce a confidence of $c_{s_1}(x \oplus \delta) \geq 0.95$. The resulting high-confidence prediction causes an \textit{early exit}, preventing the input from reaching deeper layers that have not been compromised. In addition, Aegis uses a fixed confidence threshold of $\tau = 0.95$, which does not account for differences in input complexity or changes in the operating environment.
 
 % ==============================================================================
-% SECTION 4: PROPOSED TWO-LAYER DEFENSE ARCHITECTURE
+% SECTION 4: PROPOSED TWO-PHASE DEFENSE ARCHITECTURE
 % ==============================================================================
-\section{Proposed Two-Layer Defense Architecture}
+\section{Proposed Two-Phase Defense Architecture}
 
-To address the single-branch vulnerability of Aegis and provide end-to-end resilience against both non-adaptive and adaptive targeted bit-flip attacks, we propose a \textbf{Two-Layer Defense Architecture}, illustrated in Fig.~\ref{fig:architecture}.
+%To address the single-branch vulnerability of Aegis and provide end-to-end resilience against both non-adaptive and adaptive targeted bit-flip attacks, we propose a \textbf{Two-Phase Defense Architecture}, illustrated in Fig.~\ref{fig:architecture}. The figure depicts the end-to-end inference pipeline: incoming inputs first pass through the Phase 2 checksum verification module, which validates each IC branch's quantized parameters against immutable SHA-256 golden fingerprints stored in secure memory and quarantines any tampered branches; the sanitized set of trusted branches is then forwarded to the Phase 1 Stochastic Branch Ensembling (SBE) module, which randomly samples a subset of safe candidates and produces the final prediction via confidence-weighted soft consensus.
 
-\begin{figure}[!ht]
+To address the single-branch vulnerability in Aegis and improve resilience against both non-adaptive and adaptive targeted bit-flip attacks, we propose a \textbf{Two-Phase Defense Architecture}, shown in Figure \ref{fig:architecture}. The inference process begins with Phase 2, where a checksum-based verification module checks the quantized parameters of each IC against immutable SHA-256 fingerprints stored in secure memory. Branches with mismatched checksums are marked as compromised and removed from further inference. The remaining trusted branches are then passed to Phase 1, the Stochastic Branch Ensembling (SBE) module. The SBE randomly selects a subset of these branches and combines their predictions using a confidence weighted soft consensus to obtain the final prediction.
+
+
+\begin{figure}[tb!]
 \centering
-\includegraphics[width=\linewidth]{figures/fig_architecture_checksum.pdf}
-\caption{Architecture of the proposed Two-Layer Defense. On-device SHA-256 verification validates IC parameters against immutable golden fingerprints in secure memory. Detected tampered branches are quarantined from the candidate pool, and safe branches are evaluated via confidence-weighted stochastic ensembling.}
+\includegraphics[width=\linewidth]{figures/fig_architecture_checksum_mod.png}
+\caption{Architecture of the proposed Two-Phase Defense. On-device SHA-256 verification validates IC parameters against immutable golden fingerprints in secure memory. Detected tampered branches are quarantined from the candidate pool, and safe branches are evaluated via confidence-weighted stochastic ensembling.}
+\vspace{-0.5cm}
 \label{fig:architecture}
 \end{figure}
 
-\subsection{Layer 1: Stochastic Branch Ensembling (SBE)}
-Instead of terminating early upon encountering an isolated overconfident branch, SBE evaluates all sampled candidate branches concurrently and aggregates their predictions through confidence-weighted soft consensus. The complete procedure is formalized in Algorithm~\ref{alg:sbe_inference}.
+\subsection{Phase 1: Stochastic Branch Ensembling (SBE)}
+%Instead of terminating early upon encountering an isolated overconfident branch, SBE evaluates all sampled candidate branches concurrently and aggregates their predictions through confidence-weighted soft consensus. The complete procedure is formalized in Algorithm~\ref{alg:sbe_inference}.
+
+Rather than terminating inference when a single branch produces a high confidence prediction, SBE evaluates all the sampled candidate branches and combines their outputs using a simple confidence weighted soft consensus. The resulting inference procedure is described in Algorithm~\ref{alg:sbe_inference}.
+
 
 \begin{enumerate}
-    \item \textbf{Candidate Pool Pruning:} On multi-exit backbones (e.g., 16-branch ResNet-32), early ICs attached to initial layers lack sufficient depth for robust feature representation ($\sim$10\% clean accuracy). We evaluate clean validation accuracy across all branches and prune the bottom $M$ weakest classifiers ($M = 4$), establishing a high-performing candidate pool:
+    \item \textbf{Candidate Pool Pruning:} On multi-exit backbones (e.g., 16-branch ResNet-32), early ICs attached to initial layers lack sufficient depth for robust feature representation ($\sim$10\% clean accuracy). We evaluate clean validation accuracy across all branches and prune the bottom $M$ weakest classifiers ($M = 4$), establishing a high-performing candidate pool. Here, $\gamma$ denotes the minimum clean validation accuracy threshold required for a branch to be admitted into the candidate pool; branches scoring below $\gamma$ are deemed too weak for reliable inference and are pruned:
     \begin{equation}
-        \mathcal{B}_{\text{pool}} = \{B_i \mid \text{Acc}(B_i) \ge \gamma\}, \quad |\mathcal{B}_{\text{pool}}| = B - M = 12.
+        \mathcal{B}_{\text{active}} = \{B_i \mid \text{Acc}(B_i) \ge \gamma\}, \quad |\mathcal{B}_{\text{active}}| = B - M = 12.
     \end{equation}
     \item \textbf{Dynamic Subset Selection:} For each input $x$, we draw an expanded subset $S$ of $C = 5$ candidate branches uniformly at random without replacement:
     \begin{equation}
-        S = \{B_{(1)}, B_{(2)}, \dots, B_{(C)}\} \sim \text{Uniform}(\mathcal{B}_{\text{pool}}, C).
+        S = \{B_{(1)}, B_{(2)}, \dots, B_{(C)}\} \sim \text{Uniform}(\mathcal{B}_{\text{active}}, C).
     \end{equation}
     \item \textbf{Confidence-Weighted Soft Consensus:} For each sampled branch $k \in S$, we obtain class probabilities $P_k(x) = \text{Softmax}(z_k(x))$ and peak confidence weight $w_k = \max_c P_{k, c}(x)$. Predictions are aggregated via confidence-weighted averaging:
     \begin{equation}
         P_{\text{ens}}(x) = \frac{\sum_{k \in S} w_k \cdot P_k(x)}{\sum_{k \in S} w_k}, \quad \hat{y} = \arg\max_{c} P_{\text{ens}, c}(x).
     \end{equation}
 \end{enumerate}
-By requiring a multi-branch consensus, SBE ensures that an isolated hijacked branch cannot dictate the classification outcome, as its vote is diluted and outvoted by the remaining clean branches in $S$. Furthermore, SBE completely eliminates the brittle static threshold $\tau$.
+By requiring a multi-branch consensus, SBE ensures that an isolated hijacked branch cannot dictate the classification outcome, as its vote is diluted and outvoted by the remaining clean branches in $S$. Furthermore, SBE completely eliminates the brittle static threshold $\tau$. 
 
-\begin{algorithm}[!htb]
-\caption{Layer 1: Stochastic Branch Ensembling (SBE) Inference}
+For example, if 5 branches predict Tiger, Tiger, Cat, Tiger, and Cat, the SBE selects Tiger by majority vote even if one branch is hijacked. Unlike a fixed threshold $\tau$, SBE relies on branch consensus, so the decision remains robust as long as the clean branches agree.
+
+
+\begin{algorithm}[tb!]
+\caption{Phase 1: Stochastic Branch Ensembling (SBE) Inference}
 \label{alg:sbe_inference}
 \begin{algorithmic}[1]
 \renewcommand{\algorithmicrequire}{\textbf{Input:}}
@@ -181,13 +330,13 @@ By requiring a multi-branch consensus, SBE ensures that an isolated hijacked bra
 \STATE $C' \leftarrow \min(C, |\mathcal{B}_{\text{active}}|)$
 \STATE $S \leftarrow \text{UniformRandomSample}(\mathcal{B}_{\text{active}}, \text{size}=C')$
 \STATE \textit{// Step 2: Concurrent Multi-Branch Forward Evaluation}
-\STATE $Logits \leftarrow []$
+\STATE $Logits \leftarrow [\:\:]$
 \FOR{each branch $B_k \in S$}
     \STATE $z_k \leftarrow \text{ForwardBranch}(x, B_k)$
     \STATE $Logits\text{.append}(z_k)$
 \ENDFOR
 \STATE \textit{// Step 3: Probability \& Peak Confidence Estimation}
-\STATE $Probs \leftarrow []$, $Weights \leftarrow []$
+\STATE $Probs \leftarrow [\:\:]$, $Weights \leftarrow [\:\:]$
 \FOR{each $z_k \in Logits$}
     \STATE $P_k \leftarrow \text{Softmax}(z_k)$
     \STATE $w_k \leftarrow \max_c P_{k, c}$ \quad \textit{// Peak top-1 confidence weight}
@@ -200,16 +349,16 @@ By requiring a multi-branch consensus, SBE ensures that an isolated hijacked bra
 \end{algorithmic}
 \end{algorithm}
 
-\subsection{Layer 2: Checksum-Based Self-Healing Quarantine}
-While SBE effectively neutralizes non-adaptive attacks, an adaptive adversary with white-box knowledge of the ensemble can optimize joint bit flips across multiple branches simultaneously. To counteract this, Layer~2 incorporates an on-device \textbf{Weight Integrity Verification and Self-Healing Quarantine} mechanism, formalized in Algorithm~\ref{alg:checksum_quarantine}.
+\subsection{Phase 2: Checksum-Based Self-Healing Quarantine}
+While SBE effectively neutralizes non-adaptive attacks, an adaptive adversary with white-box knowledge of the ensemble can optimize joint bit flips across multiple branches simultaneously. To counteract this, Phase 2 incorporates an on-device \textbf{Weight Integrity Verification and Self-Healing Quarantine} mechanism, formalized in Algorithm~\ref{alg:checksum_quarantine}.
 
-\begin{algorithm}[!htb]
-\caption{Layer 2: Intra-Model IC Checksum Verification \& Quarantine}
+\begin{algorithm}[tb!]
+\caption{Phase 2: Intra-Model IC Checksum Verification and Quarantine}
 \label{alg:checksum_quarantine}
 \begin{algorithmic}[1]
 \renewcommand{\algorithmicrequire}{\textbf{Input:}}
 \renewcommand{\algorithmicensure}{\textbf{Output:}}
-\REQUIRE Multi-exit model $M$ with IC branches $\{B_0, \dots, B_{B-1}\}$, candidate pool $\mathcal{B}_{\text{pool}}$, golden fingerprints $\{h_k^*\}_{k=0}^{B-1}$
+\REQUIRE Multi-exit model $M$ with IC branches $\{B_0, \dots, B_{B-1}\}$, candidate pool $\mathcal{B}_{\text{active}}$, golden fingerprints $\{h_k^*\}_{k=0}^{B-1}$
 \ENSURE Sanitized candidate pool $\mathcal{B}_{\text{safe}}$, trust mask $\boldsymbol{\mu}$
 \STATE \textbf{Initialize:} $\mathcal{B}_{\text{safe}} \leftarrow \emptyset$, $\boldsymbol{\mu} \leftarrow \mathbf{0}^B$
 \STATE \textit{// Step 1: Periodic On-Device IC Parameter Verification}
@@ -217,13 +366,13 @@ While SBE effectively neutralizes non-adaptive attacks, an adaptive adversary wi
     \STATE $b_k \leftarrow \text{bytes}(W_{q, k})$ \quad \textit{// Extract quantized weight bytes}
     \STATE $h_k \leftarrow \text{SHA-256}(b_k)$
     \IF{$h_k == h_k^*$}
-        \STATE $\mu_k \leftarrow 1$ \quad \textit{// Branch verified intact}
+        \STATE $\mu_k \leftarrow 1$; \textit{//Branch verified intact}
     \ELSE
-        \STATE $\mu_k \leftarrow 0$ \quad \textit{// Bit tampering detected — quarantine branch}
+        \STATE $\mu_k \leftarrow 0$; \textit{//Bit tampering detected quarantine branch}
     \ENDIF
 \ENDFOR
 \STATE \textit{// Step 2: Construct Sanitized Safe Candidate Pool}
-\FOR{each $B_k \in \mathcal{B}_{\text{pool}}$}
+\FOR{each $B_k \in \mathcal{B}_{\text{active}}$}
     \IF{$\mu_k == 1$}
         \STATE $\mathcal{B}_{\text{safe}} \leftarrow \mathcal{B}_{\text{safe}} \cup \{B_k\}$
     \ENDIF
@@ -241,14 +390,14 @@ While SBE effectively neutralizes non-adaptive attacks, an adaptive adversary wi
     \begin{equation}
         h_k^* = \text{SHA-256}\left(\text{bytes}(W_{q, k})\right),
     \end{equation}
-    and stored securely in tamper-proof read-only hardware memory (e.g., TPM, Secure Enclave, or ROM).
+    and stored securely in tamper-proof read-only hardware memory (e.g., TPM, Secure Enclave, or ROM) \cite{rangarajan2022supervault}.
     \item \textbf{Runtime Tamper Detection \& Trust Masking:} During inference, the system periodically recomputes current hash digests $h_k = \text{SHA-256}(\text{bytes}(W_{q, k}))$ across all internal classifier heads. A binary trust mask $\mu_k \in \{0, 1\}$ is assigned to each branch:
     \begin{equation}
         \mu_k = \mathbb{I}\left( h_k == h_k^* \right) = \begin{cases} 1, & \text{if branch } k \text{ is intact} \\ 0, & \text{if bit-tampering detected.} \end{cases}
     \end{equation}
     \item \textbf{Trust-Masked Quarantine and Self-Healing Consensus:} Any branch detected with bit-level corruption ($\mu_k = 0$) is immediately quarantined and removed from the active candidate sampling pool:
     \begin{equation}
-        \mathcal{B}_{\text{safe}} = \{ B_k \in \mathcal{B}_{\text{pool}} \mid \mu_k = 1 \}.
+        \mathcal{B}_{\text{safe}} = \{ B_k \in \mathcal{B}_{\text{active}} \mid \mu_k = 1 \}.
     \end{equation}
     The active ensemble subset is dynamically sampled strictly from healthy branches ($S_{\text{safe}} \subseteq \mathcal{B}_{\text{safe}}$, with $|S_{\text{safe}}| = \min(C, |\mathcal{B}_{\text{safe}}|)$), producing the self-healed consensus:
     \begin{equation}
@@ -258,21 +407,26 @@ While SBE effectively neutralizes non-adaptive attacks, an adaptive adversary wi
 Because clean ICs seamlessly absorb the inference load, the network self-heals predictions with \textbf{zero retraining, zero parameter rollback overhead}, and negligible cryptographic overhead ($<5\,\mu\text{s}$ check per IC).
 
 
+
+
 % ==============================================================================
 % SECTION 5: EXPERIMENTAL RESULTS AND COMPARISON
 % ==============================================================================
 \section{Experimental Results and Comparison}
 
 \subsection{Experimental Settings}
-We evaluated our defense against Targeted Bit-flip Trojan (TBT) attacks using quantized ResNet-32 backbones on two standard benchmarks: \textbf{CIFAR-10} ($32 \times 32$, 10 classes) and \textbf{STL-10} ($96 \times 96$, 10 classes). All experiments were executed on an enterprise GPU cluster using NVIDIA Tesla P100-16GB and H100 GPUs under PyTorch 1.13.1 and CUDA 11.7. 
-The ResNet-32 model was trained for 200 epochs using SGD with momentum 0.9, weight decay $3 \times 10^{-4}$, initial learning rate 0.01 with schedule decay at epochs 100 and 150, achieving a peak clean baseline validation accuracy of 91.38\%. The TBT attack was configured with target class $y_t = 2$ and an $11 \times 11$ trigger patch (Trojan Area Percentage $\text{TAP} \approx 11.8\%$).
+We evaluated our defense against Targeted Bit-flip Trojan (TBT) attacks using a quantized ResNet-32 backbone on the \textbf{CIFAR-10} ($32 \times 32$, 10 classes) benchmark. All experiments were executed on an enterprise GPU cluster using NVIDIA Tesla P100-16GB and H100 GPUs under PyTorch 1.13.1 and CUDA 11.7. 
+The ResNet-32 model was trained for 200 epochs using Stochastic Gradient Descent (SGD) with momentum 0.9, weight decay $3 \times 10^{-4}$, initial learning rate 0.01 with schedule decay at epochs 100 and 150, achieving a peak clean baseline validation accuracy of 91.38\%. The TBT attack was configured with target class $y_t = 2$ and an $11 \times 11$ trigger patch. The Trojan Area Percentage (TAP) defined as the ratio of the trigger patch area to the total input image area was $\text{TAP} \approx 11.8\%$.
 
-\begin{table}[!ht]
+Despite a 91.38\% clean validation accuracy, the model is exposed to a relatively small 11×11 trigger occupying only 11.8\% of the image, highlighting how little input manipulation may be needed to influence DNN behavior. The targeted class setting shows that the attack is not merely degrading accuracy; it is designed to steer specific inputs toward a chosen miss classification target.
+
+
+\begin{table}[tb!]
 \caption{Comprehensive Robustness and Clean Accuracy Benchmark Against TBT Attacks on CIFAR-10 (ResNet-32)}
 \label{tab:asr_results}
 \centering
 \small
-\renewcommand{\arraystretch}{1.25}
+\renewcommand{\arraystretch}{1.3}
 \resizebox{\columnwidth}{!}{%
 \begin{tabular}{|l|c|c|c|c|}
 \hline
@@ -284,51 +438,82 @@ BASE & 91.38 & 70.70 & 91.38 & 70.70 \\ \hline
 BIN~\cite{rakin2019bfa} & 89.20 & 94.80 & -- & NA$^*$ \\ \hline
 RA-BNN~\cite{he2020defend} & 87.50 & 74.50 & -- & NA$^*$ \\ \hline
 SDN~\cite{kaya2019sdn} & 91.10 & 16.30 & 84.60 & 37.20 \\ \hline
-Aegis~\cite{wang2023aegis} & 91.38 & 19.90 & 83.41 & 31.10 \\ \hline
-\textbf{L1: SBE (Undefended)} & \textbf{90.01} & 15.48 & \textbf{87.39} & 40.72 \\ \hline
-\textbf{L2: Self-Heal (Ours)} & 89.93 & \textbf{11.67} & 83.02 & \textbf{15.09} \\ \hline
+Aegis~\cite{wang2023aegis} & 91.38 & 17.82 & 83.41 & 38.50 \\ \hline
+\textbf{P1: SBE (Undefended)} & \cellcolor{yellow} \textbf{90.01} & 15.48 & \cellcolor{yellow} \textbf{87.39} & 40.72 \\ \hline
+\textbf{P2: Self-Heal (Ours)} & 89.93 & \cellcolor{yellow} \textbf{11.67} & 83.02 & \cellcolor{yellow}\textbf{15.09} \\ \hline
 \end{tabular}%
 }
 \vskip 3pt
 \begin{flushleft}
 \footnotesize
 $^*$NA indicates defense is not applicable under multi-exit adaptive attacks. \\
-CDA: Clean Data Accuracy; ASR: Attack Success Rate. Optimal results in \textbf{bold}.
+CDA: Clean Data Accuracy; ASR: Attack Success Rate.
 \end{flushleft}
+\vspace{-0.4cm}
 \end{table}
 
-\begin{figure}[!ht]
+\begin{figure}[tb!]
 \centering
 \includegraphics[width=\linewidth]{figures/fig_results_cifar10.pdf}
-\caption{Comprehensive performance comparison between Aegis baseline, Layer 1 (SBE, undefended), and Layer 2 (Self-Healing, defended) across all four evaluation dimensions on CIFAR-10: (a) Clean Data Accuracy (CDA) $\uparrow$, and (b) Attack Success Rate (ASR) $\downarrow$ under non-adaptive and adaptive TBT attacks. The red dashed line denotes the theoretical random-guess lower bound (10\%). Layer 2 self-healing achieves a dramatic 60.8\% relative reduction in adaptive ASR compared to Aegis while strictly preserving high clean accuracy.}
+\caption{Comprehensive performance comparison between Aegis baseline, Phase 1 (SBE, undefended), and Phase 2 (Self-Healing, defended) across all four evaluation dimensions on CIFAR-10: (a) Clean Data Accuracy (CDA) $\uparrow$, and (b) Attack Success Rate (ASR) $\downarrow$ under non-adaptive and adaptive TBT attacks. The red dashed line denotes the theoretical random-guess lower bound (10\%). Phase 2 self-healing achieves a dramatic 60.8\% relative reduction in adaptive ASR compared to Aegis while strictly preserving high clean accuracy.}
+\vspace{-0.3cm}
 \label{fig:results_cifar10_bars}
 \end{figure}
 
-\begin{figure}[!ht]
+\begin{figure}[tb!]
 \centering
 \includegraphics[width=\linewidth]{figures/defense_asr_comparison_line.pdf}
-\caption{Attack Success Rate (ASR) comparison across defense paradigms on CIFAR-10 (ResNet-32) under non-adaptive and adaptive TBT attacks. The shaded area highlights our proposed L2: Self-Heal defense, which suppresses ASR to 11.67\% (non-adaptive) and 15.09\% (adaptive), closest to the 10\% random guessing lower bound.}
+\caption{Attack Success Rate (ASR) comparison across defense paradigms on CIFAR-10 (ResNet-32) under non-adaptive and adaptive TBT attacks. The shaded area highlights our proposed P2: Self-Heal defense, which suppresses ASR to 11.67\% (non-adaptive) and 15.09\% (adaptive), closest to the 10\% random guessing lower bound.}
+\vspace{-0.5cm}
 \label{fig:defense_asr_line}
 \end{figure}
 
-\begin{figure}[!ht]
+\begin{figure}[tb!]
 \centering
-\includegraphics[width=\linewidth]{figures/tbt_attack_trajectory.pdf}
-\caption{Robustness progression as a function of flipped bits ($k \in [0, 20]$). (a) ASR progression: Baseline Aegis and L1 Raw SBE ramp up to $\sim$40\%, while L2 Self-Healing clamps ASR at $\sim$10\% immediately upon detecting tampering. (b) Clean accuracy degradation: L2 Self-Healing strictly preserves accuracy at $>90.6\%$.}
-\label{fig:tbt_trajectory}
+\includegraphics[width=0.98\linewidth,height=5.5cm]{figures/tbt_asr_trajectory.pdf}
+\vspace{-0.3cm}
+\caption{
+Attack Success Rate (ASR) on the CIFAR-10 benchmark as a function of the number of flipped bits ($k \in [0,20]$). The ASR of both Aegis and the undefended Phase 1 (SBE) defense increases with the number of corrupted bits, reaching approximately 40\%. In contrast, Phase 2 Self-Healing detects checksum mismatches and quarantines the affected branches, keeping the ASR close to the random-guessing level of approximately 10\%.}
+%Attack Success Rate (ASR) progression on the CIFAR-10 benchmark as a function of flipped bits ($k \in [0, 20]$). Baseline Aegis and undefended Phase 1 (SBE) steadily escalate to $\sim$40\% ASR as more bits are corrupted, whereas Phase 2 Self-Healing immediately quarantines compromised branches upon detecting cryptographic checksum mismatches, clamping ASR at the theoretical random guessing lower bound ($\sim$10\%).}
+\label{fig:tbt_asr_trajectory}\label{fig:tbt_trajectory}
+\vspace{-0.4cm}
 \end{figure}
 
-\subsection{Analysis on CIFAR-10}
-Table~\ref{tab:asr_results}, Fig.~\ref{fig:results_cifar10_bars}, and Fig.~\ref{fig:defense_asr_line} compare our proposed defense against existing baselines across all performance dimensions:
-\begin{itemize}
-    \item \textbf{Comparison Against Binarization (BIN, RA-BNN):} Weight binarization approaches fail severely against targeted attacks, yielding $94.80\%$ and $74.50\%$ ASR respectively, because constraining weights to $\pm 1$ increases the gradient sensitivity of critical path parameters.
-    \item \textbf{Non-Adaptive Attack Resilience:} The unaugmented BASE model suffers $70.70\%$ ASR. Dynamic multi-exit SDN and Aegis lower ASR to $16.30\%$ and $19.90\%$ (with $17.82\%$ in reproduced single-model runs). Layer~1 (SBE) reduces ASR to $15.48\%$ while boosting clean accuracy to $90.01\%$. With Layer~2 self-healing active, ASR drops further to \textbf{11.67\%} (a $34.5\%$ reduction over Aegis) while maintaining a high clean accuracy of \textbf{89.93\%}.
-    \item \textbf{Adaptive Attack Neutralization:} Under adaptive attacks where the adversary optimizes bit flips jointly against all internal branches, Aegis suffers $31.10\%$ ASR (and $38.50\%$ in reproduced single-model evaluation with clean accuracy falling to $83.41\%$), and undefended SBE reaches $40.72\%$. However, as visualized in Fig.~\ref{fig:results_cifar10_bars}(b), when Layer~2 self-healing detects and quarantines compromised branches, ASR plummets by \textbf{60.8\%} down to \textbf{15.09\%}, approaching the theoretical $10\%$ random-guess lower bound, while maintaining a clean accuracy of \textbf{83.02\%}.
-\end{itemize}
+\begin{figure}[tb!]
+\centering
+\includegraphics[width=0.98\linewidth,height=5.5cm]{figures/tbt_cacc_trajectory.pdf}
+\vspace{-0.3cm}
+\caption{Clean classification accuracy on the CIFAR-10 benchmark as the number of flipped bits increases ($k \in [0,20]$). As bit corruption increases, the accuracy of Baseline Aegis decreases to $83.41\%$, while the undefended Phase 1 (SBE) drops to $87.36\%$ because of parameter tampering. In contrast, Phase 2 Self-Healing maintains clean accuracy above $90.6\%$ by detecting and isolating the compromised internal classifiers.}
+%Clean classification accuracy degradation on the CIFAR-10 benchmark across flipped bits ($k \in [0, 20]$). While Baseline Aegis degrades down to $83.41\%$ and undefended Phase 1 (SBE) drops to $87.36\%$ due to parameter tampering, Phase 2 Self-Healing strictly preserves clean accuracy at $>90.6\%$ by isolating compromised internal classifiers.}
+\vspace{-0.6cm}
+\label{fig:tbt_cacc_trajectory}
+\end{figure}
 
-\subsection{Analysis on STL-10}
-To verify cross-dataset generalization, we evaluated the defense on the higher-resolution STL-10 dataset ($96 \times 96$). Under non-adaptive TBT, baseline Aegis yields $13.00\%$ ASR; our defense drives ASR down to \textbf{10.21\%} while maintaining $74.11\%$ clean accuracy. Under aggressive adaptive TBT, Aegis suffers $31.00\%$ ASR; our Self-Healing Ensemble cuts this in half to \textbf{13.91\%} while strictly preserving clean accuracy at \textbf{74.19\%} (up from $73.70\%$), demonstrating that isolating compromised ICs restores peak performance regardless of input resolution.
+Table~\ref{tab:asr_results}, Fig.~\ref{fig:results_cifar10_bars}, and Fig.~\ref{fig:defense_asr_line} compare our proposed defense against existing baselines across all performance dimensions. 
 
+\subsection{Comparison Against Binarization (BIN, RA-BNN)} 
+
+Weight-binarization methods perform poorly against targeted attacks, with ASRs of $94.80\%$ and $74.50\%$, respectively. This vulnerability can be attributed to the increased sensitivity of critical-path parameters when the weights are constrained to $\pm 1$.  
+
+Weight binarization alone does not provide effective protection against targeted attacks, as BIN and RA-BNN still achieve high attack success rates of 94.80\% and 74.50\%, respectively. Restricting weights to $\pm1$ can make a small set of critical parameters more influential, allowing targeted bit flips to cause substantial changes in the model's prediction. Which make it very bad choice for edge deployment when security is a major concern.
+%Weight binarization approaches fail severely against targeted attacks, yielding $94.80\%$ and $74.50\%$ ASR respectively, because constraining weights to $\pm 1$ increases the gradient sensitivity of critical path parameters.
+\subsection{Non-Adaptive Attack Resilience} 
+
+The unaugmented BASE model suffers $70.70\%$ ASR. Dynamic multi-exit SDN and Aegis lower ASR to $16.30\%$ and $19.90\%$ (with $17.82\%$ in reproduced single-model runs). Phase 1 (SBE) reduces ASR to $15.48\%$ while boosting clean accuracy to $90.01\%$. With Phase 2 self-healing active, ASR drops further to \textbf{11.67\%} (a $34.5\%$ reduction over Aegis) while maintaining a high clean accuracy of \textbf{89.93\%}.
+
+The two-phase defense substantially improves resilience, reducing ASR from 70.70\% to 11.67\%, while preserving clean accuracy high. Self-healing provides an additional layer of protection beyond multi-exit consensus, reducing the residual attack success by a further 24.6\% relative to Phase 1.
+ 
+ \subsection{ Adaptive Attack Neutralization} 
+    
+Under adaptive attacks where the adversary optimizes bit flips jointly against all internal branches, Aegis suffers $31.10\%$ ASR (and $38.50\%$ in reproduced single-model evaluation with clean accuracy falling to $83.41\%$), and undefended SBE reaches $40.72\%$. However, as visualized in Fig.~\ref{fig:results_cifar10_bars}(b), when Phase 2 self-healing detects and quarantines compromised branches, ASR plummets by \textbf{60.8\%} down to \textbf{15.09\%}, approaching the theoretical $10\%$ random-guess lower bound, while maintaining a clean accuracy of \textbf{83.02\%}.
+
+Adaptive attacks are particularly challenging because the adversary knows the model structure and its mitigation mechanisms, enabling bit flips to be optimized jointly against all internal branches. Even under this stronger threat model, Phase 2 self-healing reduces ASR from 40.72\% to 15.09\% (60.8\% reduction) while maintaining 83.02\% clean accuracy, bringing the attack success rate close to the 10\% random-guess bound. Blue line is consistently above 90\%.
+
+\subsection{Sensitivity to Number of Bit Flip}
+
+Figure~\ref{fig:tbt_asr_trajectory} shows the Attack Success Rate (ASR) on CIFAR-10 as the number of flipped bits increases from $k=0$ to $20$. The ASR of both Aegis and Phase 1 (SBE) increases as more bits are flipped, reaching about 40\%. In contrast, Phase 2 Self-Healing detects checksum mismatches and isolates the affected branches, keeping the ASR close to the 10\% random-guessing level (shown in blue line).
+
+Figure~\ref{fig:tbt_cacc_trajectory} shows the clean classification accuracy for the same range of bit flips. The accuracy of Aegis falls to 83.41\%, while Phase 1 (SBE) drops to 87.36\% as the model parameters are corrupted. Phase 2 Self-Healing, however, keeps the accuracy above 90.6\% by detecting and isolating the affected internal classifiers (shown in blue line).
 
 % ==============================================================================
 % SECTION 6: OVERHEAD AND SECURITY DISCUSSION
@@ -336,25 +521,36 @@ To verify cross-dataset generalization, we evaluated the defense on the higher-r
 \section{Overhead and Security Discussion}
 
 \subsection{Hardware Storage and Latency Overhead}
-Our Layer 2 integrity verification imposes negligible hardware overhead. Because SHA-256 fingerprints are computed exclusively over the compact parameter tensors of the 16 IC heads (linear projection layers containing $64 \times 10 = 640$ weights each), storing all 16 golden hashes requires only $16 \times 32\text{ bytes} = \mathbf{512\text{ bytes}}$ in secure read-only memory (ROM/TPM). Computing SHA-256 over 640 bytes takes less than $5\,\mu\text{s}$ on standard edge processors, incurring less than $0.08\,\text{ms}$ total verification overhead for all ICs combined.
+Our Phase 2 integrity verification imposes negligible hardware overhead. Because SHA-256 fingerprints are computed exclusively over the compact parameter tensors of the 16 IC heads (linear projection layers containing $64 \times 10 = 640$ weights each), storing all 16 golden hashes requires only $16 \times 32\text{ bytes} = \mathbf{512\text{ bytes}}$ in secure read-only memory (ROM/TPM). Computing SHA-256 over 640 bytes takes less than $5\,\mu\text{s}$ on standard edge processors, incurring less than $0.08\,\text{ms}$ total verification overhead for all ICs combined.
 
 \subsection{Deterministic Quantization Guarantee}
 A fundamental challenge in cryptographic verification of neural networks is floating-point non-determinism across heterogeneous edge hardware. In our architecture, models are deployed in fixed-point 8-bit integer quantization ($W_q \in \mathbb{Z}^8$). Because integer byte representations are strictly deterministic and invariant to micro-architectural differences, the SHA-256 digest produces zero false-positive integrity alarms across arbitrary deployment platforms.
 
 \subsection{Attack-Agnostic Defense Capability}
-Because our Layer 2 verification operates directly on physical parameter bitstrings in memory, the integrity check is inherently \textbf{attack-algorithm-agnostic}. Whether an adversary attempts targeted backdoor injection via TBT~\cite{rakin2020tbt}, progressive parameter search via ProFlip~\cite{chen2021proflip}, latent feature manipulation via TA-LBF~\cite{bai2021talbf}, or untargeted BFA~\cite{rakin2019bfa}, any unauthorized modification to physical weight bits immediately invalidates the cryptographic digest. The tampered branch is quarantined before malicious activations can propagate into the stochastic ensemble.
+Because our Phase 2 verification operates directly on physical parameter bitstrings in memory, the integrity check is inherently \textbf{attack-algorithm-agnostic}. Whether an adversary attempts targeted backdoor injection via TBT~\cite{rakin2020tbt}, progressive parameter search via ProFlip~\cite{chen2021proflip}, latent feature manipulation via TA-LBF~\cite{bai2021talbf}, or untargeted BFA~\cite{rakin2019bfa}, any unauthorized modification to physical weight bits immediately invalidates the cryptographic digest. The tampered branch get quarantined before the malicious activations can propagate into the stochastic ensemble.
 
 
 % ==============================================================================
 % SECTION 7: CONCLUSION
 % ==============================================================================
 \section{Conclusion}
-This paper presented a resilient Two-Layer Defense Architecture against physical parameter tampering and Targeted Bit-flip Trojan (TBT) attacks in multi-exit neural networks. By combining Stochastic Branch Ensembling (SBE) with an on-device cryptographic checksum verification and dynamic quarantine mechanism, our approach effectively eliminates the single-branch failure bottleneck inherent in existing early-exit defenses like Aegis. When an adaptive adversary attempts to hijack intermediate representations, our defense dynamically detects bit tampering, quarantines compromised branches, and routes inference through safe IC consensus with zero retraining. Evaluations across CIFAR-10 and STL-10 on quantized ResNet-32 demonstrate that our defense neutralizes adaptive attacks down to 15.09\% on CIFAR-10 and 13.91\% on STL-10 while preserving high clean data accuracy, establishing a robust foundation for secure edge intelligence.
+
+%We  presented a resilient Two-Phase Defense Architecture against physical parameter tampering and Targeted Bit-flip Trojan (TBT) attacks in multi-exit neural networks. By combining Stochastic Branch Ensembling (SBE) with an on-device cryptographic checksum verification and dynamic quarantine mechanism, our approach effectively eliminates the single-branch failure bottleneck inherent in existing early-exit defenses like Aegis. When an adaptive adversary attempts to hijack intermediate representations, our defense dynamically detects bit tampering, quarantines compromised branches, and routes inference through safe IC consensus with zero retraining. Evaluations on CIFAR-10 with quantized ResNet-32 demonstrate that our defense neutralizes adaptive attacks down to 15.09\% ASR while preserving high clean data accuracy at 83.02\%, establishing a robust foundation for secure edge intelligence.
+
+We presented a two-phase defense architecture for protecting multi-exit neural networks against physical parameter tampering and targeted bit-flip Trojan (TBT) attacks. The approach combines Stochastic Branch Ensembling (SBE) with on-device cryptographic checksum verification and branch quarantine to address the single-branch dependency of existing early-exit defenses such as Aegis. During inference, the checksum mechanism identifies tampered branches and removes them from further use, while SBE combines predictions from the remaining trusted ICs without requiring model retraining. Experiments on quantized ResNet-32 using CIFAR-10 show that the proposed defense reduces the ASR of adaptive attacks to 15.09\% while maintaining a clean accuracy of 83.02\%. 
+
+ In future,  we will evaluate the proposed defense on larger DNN models and a wider range of datasets, including networks with different numbers and placements of intermediate classifiers. We plan to explore lightweight and adaptive checksum mechanisms to reduce verification overhead and make the approach more suitable for resource-constrained edge devices.
+
+
 
 
 % ==============================================================================
 % REFERENCES
 % ==============================================================================
+\newpage
+%\normalsize
+\setstretch{1.1}
+
 \begin{thebibliography}{00}
 
 \bibitem{wang2023aegis}
@@ -366,11 +562,55 @@ A.~S. Rakin, Z.~He, and D.~Fan, ``TBT: Targeted neural network attack with bit t
 \bibitem{chen2021proflip}
 H.~Chen, C.~Fu, J.~Zhao, and F.~Koushanfar, ``ProFlip: Targeted trojan attack with progressive bit flips,'' in \textit{Proc. IEEE/CVF Int. Conf. Comput. Vis. (ICCV)}, 2021, pp. 7718--7727.
 
+\bibitem{zhou2022deep}
+X. Zhou, H. Liu, C. Shi, and J. Liu,
+\textit{Deep Learning on Edge Computing Devices: Design Challenges of Algorithm and Architecture}.
+Elsevier, 2022.
+
+%\cite{hong2019terminal,yao2020deephammer,luo2021deepstrike,xu2021security,khoshavi2022hardenn,li2025onebit}
+
+\bibitem{hong2019terminal}
+S. Hong, P. Frigo, Y. Kaya, C. Giuffrida, and T. Dumitras,
+``Terminal Brain Damage: Exposing the Graceless Degradation in Deep Neural Networks Under Hardware Fault Attacks,''
+in \textit{Proc. 28th USENIX Security Symposium}, pp. 497--514, 2019.
+
+\bibitem{yao2020deephammer}
+F. Yao, A. S. Rakin, and D. Fan,
+``DeepHammer: Depleting the Intelligence of Deep Neural Networks through Targeted Chain of Bit Flips,''
+in \textit{Proc. 29th USENIX Security Symposium}, pp. 1463--1480, 2020.
+
+\bibitem{luo2021deepstrike}
+Y. Luo, C. Gongye, Y. Fei, and X. Xu,
+``DeepStrike: Remotely-Guided Fault Injection Attacks on DNN Accelerator in Cloud-FPGA,''
+in \textit{Proc. IEEE Int. Symp. on Hardware Oriented Security and Trust (HOST)}, 2021.
+
+\bibitem{xu2021security}
+Q. Xu, M. T. Arafin, and G. Qu,
+``Security of Neural Networks from Hardware Perspective: A Survey and Beyond,''
+in \textit{Proc. 26th Asia and South Pacific Design Automation Conference (ASPDAC)}, 
+pp. 449--454, 2021.
+
+\bibitem{khoshavi2022hardenn}
+N. Khoshavi, M. Maghsoudloo, A. Roohi, S. Sargolzaei, and Y. Bi,
+``HARDeNN: Hardware-assisted attack-resilient deep neural network architectures,''
+\textit{Microprocessors and Microsystems}, vol. 93, p. 104710, 2022.
+
+\bibitem{li2025onebit}
+X. Li, L. Luo, and Q. Zeng,
+``Backdoor Attacks on Neural Networks via One-Bit Flip,''
+in \textit{Proc. IEEE/CVF International Conference on Computer Vision (ICCV)},
+pp. 4328--4338, 2025.
+
 \bibitem{kim2014rowhammer}
 Y.~Kim, R.~Daly, J.~Kim, C.~Fallin, J.~H. Lee, D.~Lee, C.~Wilkerson, K.~Lai, and O.~Mutlu, ``Flipping bits in memory without accessing them: An experimental study of DRAM disturbance errors,'' in \textit{Proc. 41st Annu. Int. Symp. Comput. Archit. (ISCA)}, 2014, pp. 361--372.
 
 \bibitem{kaya2019sdn}
 Y.~Kaya, S.~Hong, and T.~Dumitras, ``Shallow-deep networks: Understanding and mitigating negative overthinking in deep neural networks,'' in \textit{Proc. 36th Int. Conf. Mach. Learn. (ICML)}, 2019, pp. 3273--3282.
+
+\bibitem{joseph2018adversarial}
+A. D. Joseph, B. Nelson, B. I. P. Rubinstein, and J. D. Tygar,
+\newblock \emph{Adversarial Machine Learning}.
+\newblock Cambridge University Press, 2018.
 
 \bibitem{teerapittayanon2016branchynet}
 S.~Teerapittayanon, B.~McDanel, and H.~T. Kung, ``BranchyNet: Fast inference via early exiting from deep neural networks,'' in \textit{Proc. 23rd Int. Conf. Pattern Recognit. (ICPR)}, 2016, pp. 2464--2469.
@@ -396,8 +636,13 @@ T.~Gu, B.~Dolan-Gavitt, and S.~Garg, ``BadNets: Identifying vulnerabilities in t
 \bibitem{krizhevsky2009cifar}
 A.~Krizhevsky, ``Learning multiple layers of features from tiny images,'' Univ. of Toronto, Tech. Rep., 2009.
 
-\bibitem{coates2011stl10}
-A.~Coates, A.~Ng, and H.~Lee, ``An analysis of single-layer networks in unsupervised feature learning,'' in \textit{Proc. 14th Int. Conf. Artif. Intell. Statist. (AISTATS)}, 2011, pp. 215--223.
+\bibitem{rangarajan2022supervault}
+N.~Rangarajan, J.~Knechtel, D.~Rajasekharan, and O.~Sinanoglu,
+``SuperVAULT: Superparamagnetic Volatile Auxiliary Tamper-Proof Storage,''
+\textit{IEEE Embedded Systems Letters},
+vol.~14, no.~2, pp.~103--106, June 2022,
+doi: 10.1109/LES.2021.3127682.
+
 
 \bibitem{nist2015sha256}
 National Institute of Standards and Technology (NIST), ``Secure Hash Standard (SHS),'' Federal Information Processing Standards Publication (FIPS PUB) 180-4, Aug. 2015.

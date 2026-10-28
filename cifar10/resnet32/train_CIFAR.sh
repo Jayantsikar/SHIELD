@@ -30,48 +30,6 @@ mkdir -p $SAVE_PATH
 CHECKPOINT_HOME="${SAVE_HOME}/checkpoint.pth.tar"
 CHECKPOINT_LOCAL="${SAVE_PATH}checkpoint.pth.tar"
 
-<<<<<<< HEAD
-############### Configurations ########################
-enable_tb_display=false # enable tensorboard display
-model=resnet32_quan
-dataset=cifar10
-epochs=200
-train_batch_size=128
-test_batch_size=256
-optimizer=SGD
-
-label_info=binarized
-
-save_path=./save/
-tb_path=${save_path}/tb_log  #tensorboard log path
-
-PYTHON="python"
-data_path='./data'
-    
-echo $PYTHON
-
-############### Neural network ############################
-{
-$PYTHON main.py --dataset ${dataset} --data_path ${data_path}   \
-    --arch ${model} --save_path ${save_path} \
-    --epochs ${epochs} --learning_rate 0.01 \
-    --optimizer ${optimizer} \
-	--schedule 100 150  --gammas 0.1 0.1 \
-    --attack_sample_size ${train_batch_size} \
-    --test_batch_size ${test_batch_size} \
-    --workers 4 --ngpu 1 --gpu_id 0 \
-    --print_freq 100 --decay 0.0003 --momentum 0.9 \
-    # --ic_only #default false
-    #--bfa_mydefense
-    # --clustering --lambda_coeff 1e-3    
-} &
-############## Tensorboard logging ##########################
-{
-if [ "$enable_tb_display" = true ]; then 
-    sleep 30 
-    wait
-    $TENSORBOARD --logdir $tb_path  --port=6006
-=======
 if [ -f "$CHECKPOINT_HOME" ]; then
     echo "=== Found existing checkpoint at $CHECKPOINT_HOME — copying to fast SSD for resume ==="
     cp "$CHECKPOINT_HOME" "$CHECKPOINT_LOCAL"
@@ -79,7 +37,6 @@ if [ -f "$CHECKPOINT_HOME" ]; then
 else
     echo "=== No checkpoint found — training from scratch ==="
     RESUME_FLAG=""
->>>>>>> f43ced2 (Cleanup unused files and update TBT scripts)
 fi
 
 # Force matplotlib to use non-GUI backend (prevents random freezes on headless GPU nodes)

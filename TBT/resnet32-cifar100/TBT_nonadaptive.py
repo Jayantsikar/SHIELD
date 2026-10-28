@@ -1,3 +1,7 @@
+import os, sys
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+os.makedirs('./result', exist_ok=True)
+
 import torch
 import torch.nn as nn
 import torchvision.datasets as datasets
@@ -21,6 +25,7 @@ import operator
 
 import copy
 import matplotlib.pyplot as plt
+import numpy as np
 from utils import AverageMeter, RecorderMeter
 
 
@@ -96,12 +101,12 @@ transform_test = transforms.Compose([
 ])
 
 
-trainset = torchvision.datasets.CIFAR100(root='../../cifar100/resnet32/data', train=True, download=True, transform=transform_train) 
+trainset = torchvision.datasets.CIFAR100(root='../../cifar100/resnet32/data', train=True, download=False, transform=transform_train) 
 
-loader_train = torch.utils.data.DataLoader(trainset, batch_size=128, shuffle=True, num_workers=2) 
+loader_train = torch.utils.data.DataLoader(trainset, batch_size=128, shuffle=True, num_workers=0) 
 
-testset = torchvision.datasets.CIFAR100(root='../../cifar10/resnet32/data', train=False, download=True, transform=transform_test) 
-loader_test = torch.utils.data.DataLoader(testset, batch_size=128, shuffle=False, num_workers=2) 
+testset = torchvision.datasets.CIFAR100(root='../../cifar100/resnet32/data', train=False, download=False, transform=transform_test) 
+loader_test = torch.utils.data.DataLoader(testset, batch_size=128, shuffle=False, num_workers=0) 
 
 
 #net_c = ResNet18() 
@@ -124,7 +129,7 @@ net2 = torch.nn.Sequential(
                     )  
 
 #Loading the weights
-pretrain_dict = torch.load('../../cifar100/resnet32/save_finetune/model_best.pth.tar')
+pretrain_dict = torch.load('../../cifar100/resnet32/save_finetune/model_best.pth.tar', weights_only=False, map_location='cpu')
 pretrain_dict = pretrain_dict['state_dict']
 model_dict = net.state_dict()
 pretrained_dict = {str('1.'+ k): v for k, v in pretrain_dict.items() if str('1.'+ k) in model_dict}
@@ -134,7 +139,7 @@ net.load_state_dict(model_dict)
 net.eval()
 net=net.cuda()
 
-pretrain_dict = torch.load('../../cifar100/resnet32/save_finetune/model_best.pth.tar')
+pretrain_dict = torch.load('../../cifar100/resnet32/save_finetune/model_best.pth.tar', weights_only=False, map_location='cpu')
 pretrain_dict = pretrain_dict['state_dict']
 model_dict = net2.state_dict()
 pretrained_dict = {str('1.'+ k): v for k, v in pretrain_dict.items() if str('1.'+ k) in model_dict}
@@ -143,7 +148,7 @@ model_dict.update(pretrained_dict)
 net2.load_state_dict(model_dict) 
 net2=net2.cuda()
 
-pretrain_dict = torch.load('../../cifar100/resnet32/save_finetune/model_best.pth.tar')
+pretrain_dict = torch.load('../../cifar100/resnet32/save_finetune/model_best.pth.tar', weights_only=False, map_location='cpu')
 pretrain_dict = pretrain_dict['state_dict']
 model_dict = net1.state_dict()
 pretrained_dict = {str('1.'+ k): v for k, v in pretrain_dict.items() if str('1.'+ k) in model_dict}
@@ -323,7 +328,7 @@ def validate(val_loader, model, criterion, num_branch):
         for i, (input, target) in enumerate(val_loader):
             target = target.cuda()
             input = input.cuda()
-            target_var = Variable(target, volatile=True)
+            target_var = target
         
 
 
@@ -332,7 +337,7 @@ def validate(val_loader, model, criterion, num_branch):
             output_branch = model(input)
             sm = torch.nn.functional.softmax
             for output in output_branch:
-                prob_branch = sm(output)
+                prob_branch = sm(output, dim=1)
                 max_pro, indices = torch.max(prob_branch, dim=1)
                 out_list.append((prob_branch, max_pro))
             
@@ -419,7 +424,7 @@ b=torch.Tensor(b).long().cuda()
 #-----------------------Trigger Generation----------------------------------------------------------------
 
 ### taking any random test image to creat the mask
-loader_test = torch.utils.data.DataLoader(testset, batch_size=1, shuffle=False, num_workers=2)
+loader_test = torch.utils.data.DataLoader(testset, batch_size=1, shuffle=False, num_workers=0)
  
 for t, (x, y) in enumerate(loader_test): 
         x_var, y_var = to_var(x), to_var(y.long()) 
@@ -485,7 +490,7 @@ for param in net.parameters():
 optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=0.5, momentum =0.9,
     weight_decay=0.000005)
 scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[80,120,160], gamma=0.1)
-loader_test = torch.utils.data.DataLoader(testset, batch_size=128, shuffle=False, num_workers=2)
+loader_test = torch.utils.data.DataLoader(testset, batch_size=128, shuffle=False, num_workers=0)
 
 ##### specify for model attacks. To validate the effectiveness of branch model
 def validate_for_attack(val_loader, model, criterion, num_branch, xh):
@@ -529,7 +534,7 @@ def validate_for_attack(val_loader, model, criterion, num_branch, xh):
             input[:,0:3,start:end,start:end]=xh[:,0:3,start:end,start:end]
             target = target.cuda()
             input = input.cuda()
-            target_var = Variable(target, volatile=True)
+            target_var = target
         
 
 
@@ -538,7 +543,7 @@ def validate_for_attack(val_loader, model, criterion, num_branch, xh):
             output_branch = model(input)
             sm = torch.nn.functional.softmax
             for output in output_branch:
-                prob_branch = sm(output)
+                prob_branch = sm(output, dim=1)
                 max_pro, indices = torch.max(prob_branch, dim=1)
                 out_list.append((prob_branch, max_pro))
             
@@ -631,7 +636,19 @@ for epoch in range(200):
          
     if (epoch+1)%50==0:     
 	          
-        torch.save(net.state_dict(), './result/final_trojan.pkl') ## saving the trojaned model
-        torch.save(net, './result/final_trojan.pth')
+        torch.save(net.state_dict(), './result/final_trojan_nonadaptive.pkl') ## saving the trojaned model
+        torch.save(net, './result/final_trojan_nonadaptive.pth')
         validate(loader_test, net, criterion, 16)
         validate_for_attack(loader_test, net, criterion, 16,x_tri)                
+
+print('=== Training complete. Final evaluation ===')
+final_acc = validate(loader_test, net, criterion, 16)
+final_asr = validate_for_attack(loader_test, net, criterion, 16, x_tri)
+import os
+os.makedirs('./result', exist_ok=True)
+with open('./result/final_results_nonadaptive.txt', 'w') as f:
+    f.write('TBT Non-Adaptive Attack Results (CIFAR-100)\n')
+    f.write('==========================================\n')
+    f.write(f'Clean Accuracy: {final_acc:.2f}%\n')
+    f.write(f'ASR           : {final_asr:.2f}%\n')
+print('Results summary saved to ./result/final_results_nonadaptive.txt')                

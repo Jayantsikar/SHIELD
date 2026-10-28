@@ -8,6 +8,12 @@ import torch.backends.cudnn as cudnn
 import torchvision.datasets as dset
 import torchvision.transforms as transforms
 from utils import AverageMeter, RecorderMeter, time_string, convert_secs2time, clustering_loss, change_quan_bitwidth, vote_for_predict
+import utils
+if hasattr(torch.serialization, 'add_safe_globals'):
+    try:
+        torch.serialization.add_safe_globals([utils.RecorderMeter, RecorderMeter])
+    except Exception:
+        pass
 from tensorboardX import SummaryWriter
 import models
 from models.quantization import quan_Conv2d, quan_Linear, quantize
@@ -190,9 +196,9 @@ parser.add_argument('--weight', default='1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 
                       help='weight')
 args = parser.parse_args()
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-if args.ngpu == 1:
+if args.ngpu == 1 and "CUDA_VISIBLE_DEVICES" not in os.environ:
     os.environ["CUDA_VISIBLE_DEVICES"] = str(
-        args.gpu_id)  # make only device #gpu_id visible, then
+        args.gpu_id)  # make only device #gpu_id visible if not set by SLURM
 
 args.use_cuda = args.ngpu > 0 and torch.cuda.is_available()  # check GPU
 
@@ -414,32 +420,35 @@ def main():
     if args.resume:
         if os.path.isfile(args.resume):
             print_log("=> loading checkpoint '{}'".format(args.resume), log)
-            #checkpoint = torch.load(args.resume)
-            if args.enable_bfa_mydefense:
-                checkpoint = torch.load('./save_finetune/model_best.pth.tar')#checkpoint_branch.pth.tar#model_best_def.pth.tar
-                #checkpoint = torch.load('./save_finetune/cifar10_resnet32_quan_200_SGD_binarized/model_best.pth.tar')#checkpoint_branch.pth.tar#model_best_def.pth.tar
-                #checkpoint = torch.load('/home/wangjialai/copy_for_use/flip_attack/BFA/save/cifar10_resnet20_quan_200_SGD_binarized/model_best.pth.tar')
-                #checkpoint = torch.load('/home/wangjialai/copy_for_use/flip_attack/old_cifar/BFA_branch_2/save/cifar10_resnet20_quan_200_SGD_binarized/model_best_def.pth.tar')
-                #checkpoint = torch.load('/home/wangjialai/copy_for_use/flip_attack/old_cifar/BFA_branch_stage2/save_backup/cifar10_resnet20_quan_160_SGD_binarized/model_best.pth.tar')
-            
+            try:
+                checkpoint = torch.load(args.resume, weights_only=False)
+            except TypeError:
+                checkpoint = torch.load(args.resume)
+
+            if args.fine_tune:
+                # FINE-TUNING: load weights only, start training from epoch 0 with fresh recorder
+                args.start_epoch = 0
+                recorder = RecorderMeter(args.epochs)
+                print_log("=> fine_tune mode: weights loaded, epoch reset to 0", log)
             else:
-                checkpoint = torch.load('./save/model_best.pth.tar')#checkpoint_branch.pth.tar#model_best_def.pth.tar
-            
-            #if not (args.fine_tune):
-            if True:
-                args.start_epoch = 0#checkpoint['epoch']
-                recorder = checkpoint['recorder']
-                #optimizer.load_state_dict(checkpoint['optimizer'])
+                # RESUME: restore epoch and recorder to continue from where training stopped
+                args.start_epoch = checkpoint['epoch'] if isinstance(checkpoint, dict) and 'epoch' in checkpoint else 0
+                recorder = checkpoint['recorder'] if isinstance(checkpoint, dict) and 'recorder' in checkpoint else RecorderMeter(args.epochs)
+                print_log("=> resume mode: continuing from epoch {}".format(args.start_epoch), log)
 
             state_tmp = net.state_dict()
-            if 'state_dict' in checkpoint.keys():
+            if isinstance(checkpoint, dict) and 'state_dict' in checkpoint.keys():
                 state_tmp.update(checkpoint['state_dict'])
-            else:
+            elif isinstance(checkpoint, dict):
                 state_tmp.update(checkpoint)
             
-            #net.load_state_dict(state_tmp)
             model_dict = net.state_dict()
-            pretrained_dict = {k:v for k, v in checkpoint['state_dict'].items() if k in model_dict}
+            if isinstance(checkpoint, dict) and 'state_dict' in checkpoint:
+                pretrained_dict = {k: v for k, v in checkpoint['state_dict'].items() if k in model_dict}
+            elif isinstance(checkpoint, dict):
+                pretrained_dict = {k: v for k, v in checkpoint.items() if k in model_dict}
+            else:
+                pretrained_dict = {}
             model_dict.update(pretrained_dict)
             net.load_state_dict(model_dict)
 
@@ -733,7 +742,10 @@ def main():
     # ============ TensorBoard logging ============#
     #checkpoint = torch.load(args.resume)
     torch.save(net.state_dict(), 'tmp.pth')
-    net.load_state_dict(torch.load('tmp.pth'))
+    try:
+        net.load_state_dict(torch.load('tmp.pth', weights_only=False))
+    except TypeError:
+        net.load_state_dict(torch.load('tmp.pth'))
     net.eval()
     
     
@@ -1004,7 +1016,7 @@ def adv_attack(attacker, model, model_clean, train_loader, test_loader,
         count+=1
 
     
-    attack_log = attacker.progressive_bit_search(model, data, target) 
+    attack_log = attacker.progressive_bit_search(model, data, target, range(0, num_branch)) 
         
 
     return

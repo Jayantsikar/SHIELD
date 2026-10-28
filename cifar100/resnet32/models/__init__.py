@@ -6,7 +6,7 @@ from .quan_alexnet_imagenet import alexnet_quan
 
 ############## ResNet for CIFAR-10 ###########
 from .vanilla_models.vanilla_resnet_cifar import vanilla_resnet20
-from .quan_resnet_cifar import resnet20_quan, resnet32_quan
+from .quan_resnet_cifar import resnet20_quan, resnet32_quan, resnet32_quan1
 from .bin_resnet_cifar import resnet20_bin
 
 ############## VGG for CIFAR #############

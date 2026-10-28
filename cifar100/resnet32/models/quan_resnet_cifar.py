@@ -69,12 +69,26 @@ class ResNetBasicblock(nn.Module):
 
         if self.downsample is not None:
             residual = self.downsample(x)
-        # t1=(residual + basicblock).size()[1]
-        # t2=(residual + basicblock).size()[2]
-        # t3=(residual + basicblock).size()[3]
         
-        # print("size:", t1*t2*t3)
         return F.relu(residual + basicblock, inplace=True), self.output(residual + basicblock)
+
+    def forward_2(self, x):
+        residual = x
+
+        basicblock = self.conv_a(x)
+        basicblock = self.bn_a(basicblock)
+        basicblock = F.relu(basicblock, inplace=True)
+
+        basicblock = self.conv_b(basicblock)
+        basicblock = self.bn_b(basicblock)
+
+        if self.downsample is not None:
+            residual = self.downsample(x)
+
+        return F.relu(residual + basicblock, inplace=True), (residual + basicblock)
+
+    def flip_out(self, x):
+        return F.relu(x, inplace=True), self.output(x)
 
 
 class CifarResNet(nn.Module):
@@ -129,7 +143,7 @@ class CifarResNet(nn.Module):
                 m.weight.data.fill_(1)
                 m.bias.data.zero_()
             elif isinstance(m, nn.Linear):
-                init.kaiming_normal(m.weight)
+                init.kaiming_normal_(m.weight)
                 m.bias.data.zero_()
 
     def _make_layer(self, block, planes, blocks, stride):
@@ -147,7 +161,7 @@ class CifarResNet(nn.Module):
           self.b_index += 1
         return nn.Sequential(*layers), layers
 
-    def forward(self, x):
+    def forward(self, x, nolast=False):
         x = self.conv_1_3x3(x)
         x = F.relu(self.bn_1(x), inplace=True)
         output_branch = []
@@ -157,16 +171,40 @@ class CifarResNet(nn.Module):
             x, branch_out = getattr(self, 'group{}'.format(g))[i](x)
             output_branch.append(branch_out)
 
-
-        # x = self.stage_1(x)
-        # x = self.stage_2(x)
-        # x = self.stage_3(x)
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)
-        #return self.classifier(x)
+        if nolast:
+            output_branch.append(x)
+            return output_branch
         x = self.classifier(x)
         output_branch.append(x)
         return output_branch
+
+    def flip_outputs(self, x):
+      outputs = []
+      x = self.conv_1_3x3(x)
+      x = F.relu(self.bn_1(x), inplace=True)
+      for g in range(1, 4):
+        layer_num = len(getattr(self, 'group{}'.format(g)))
+        for i in range(layer_num):
+          x, branch_in = getattr(self, 'group{}'.format(g))[i].forward_2(x)
+          outputs.append(branch_in)
+      return outputs
+
+    def adv_outputs(self, input_l): # get bit-flipper final output 
+      outputs = []
+      c_ = 0
+      for g in range(1, 4):
+        layer_num = len(getattr(self, 'group{}'.format(g)))
+        for i in range(layer_num):
+          x, branch_out = getattr(self, 'group{}'.format(g))[i].flip_out(input_l[c_])
+          outputs.append(branch_out)
+          c_ +=1
+      x = self.avgpool(x)
+      x = x.view(x.size(0), -1)
+      x = self.classifier(x)
+      outputs.append(x)
+      return outputs
 
 
 def resnet20_quan(num_classes=10):
@@ -179,7 +217,7 @@ def resnet20_quan(num_classes=10):
 
 
 def resnet32_quan(num_classes=100):
-    """Constructs a ResNet-32 model for CIFAR-10 (by default)
+    """Constructs a ResNet-32 model for CIFAR-100 (by default)
   Args:
     num_classes (uint): number of classes
   """
@@ -211,4 +249,81 @@ def resnet110_quan(num_classes=10):
     num_classes (uint): number of classes
   """
     model = CifarResNet(ResNetBasicblock, 110, num_classes)
+    return model
+
+
+class CifarResNet1(nn.Module):
+    """
+    ResNet1 variant for CIFAR — used by attack scripts (CSB, TBT, trigger).
+    Same architecture as CifarResNet but forward() returns branch outputs
+    without passing through the final classifier.
+    """
+    def __init__(self, block, depth, num_classes):
+        super(CifarResNet1, self).__init__()
+        assert (depth - 2) % 6 == 0, 'depth should be one of 20, 32, 44, 56, 110'
+        layer_blocks = (depth - 2) // 6
+        print('CifarResNet : Depth : {} , Layers for each block : {}'.format(depth, layer_blocks))
+        self.num_classes = num_classes
+        self.conv_1_3x3 = quan_Conv2d(3, 16, kernel_size=3, stride=1, padding=1, bias=False)
+        self.bn_1 = nn.BatchNorm2d(16)
+        self.inplanes = 16
+        self.branch_linearshape = [
+            16384, 16384, 16384, 16384, 16384,
+            4096,  4096,  4096,  4096,  4096,
+            1024,  1024,  1024,  1024,  1024
+        ]
+        self.b_index = 0
+        self.stage_1, self.group1 = self._make_layer(block, 16, layer_blocks, 1)
+        self.stage_2, self.group2 = self._make_layer(block, 32, layer_blocks, 2)
+        self.stage_3, self.group3 = self._make_layer(block, 64, layer_blocks, 2)
+        self.avgpool = nn.AvgPool2d(8)
+        self.classifier = quan_Linear(64 * block.expansion, num_classes)
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                m.weight.data.normal_(0, math.sqrt(2. / n))
+            elif isinstance(m, nn.BatchNorm2d):
+                m.weight.data.fill_(1)
+                m.bias.data.zero_()
+            elif isinstance(m, nn.Linear):
+                init.kaiming_normal_(m.weight)
+                m.bias.data.zero_()
+
+    def _make_layer(self, block, planes, blocks, stride):
+        downsample = None
+        if stride != 1 or self.inplanes != planes * block.expansion:
+            downsample = DownsampleA(self.inplanes, planes * block.expansion, stride)
+        layers = []
+        layers.append(block(self.num_classes, self.inplanes, planes,
+                            self.branch_linearshape[self.b_index], stride, downsample))
+        print("self.b_index:", self.b_index)
+        self.b_index += 1
+        self.inplanes = planes * block.expansion
+        for i in range(1, blocks):
+            print("self.b_index:", self.b_index)
+            layers.append(block(self.num_classes, self.inplanes, planes,
+                                self.branch_linearshape[self.b_index]))
+            self.b_index += 1
+        return nn.Sequential(*layers), layers
+
+    def forward(self, x, nolast=True):
+        x = self.conv_1_3x3(x)
+        x = F.relu(self.bn_1(x), inplace=True)
+        output_branch = []
+        for g in range(1, 4):
+            layer_num = len(getattr(self, 'group{}'.format(g)))
+            for i in range(layer_num):
+                x, branch_out = getattr(self, 'group{}'.format(g))[i](x)
+                output_branch.append(branch_out)
+        x = self.avgpool(x)
+        x = x.view(x.size(0), -1)
+        output_branch.append(x)
+        return output_branch
+
+
+def resnet32_quan1(num_classes=100):
+    """Constructs a ResNet-32 (variant 1) for CIFAR-100.
+    Used by attack scripts (TBT, CSB, trigger). Returns branch outputs.
+    """
+    model = CifarResNet1(ResNetBasicblock, 32, num_classes)
     return model

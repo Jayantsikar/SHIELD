@@ -124,7 +124,7 @@ net2 = torch.nn.Sequential(
                     )  
 
 #Loading the weights
-pretrain_dict = torch.load('./save_finetune/model_best.pth.tar')
+pretrain_dict = torch.load('./save_finetune/model_best.pth.tar', weights_only=False, map_location='cpu')
 pretrain_dict = pretrain_dict['state_dict']
 model_dict = net.state_dict()
 pretrained_dict = {str('1.'+ k): v for k, v in pretrain_dict.items() if str('1.'+ k) in model_dict}
@@ -134,7 +134,7 @@ net.load_state_dict(model_dict)
 net.eval()
 net=net.cuda()
 
-pretrain_dict = torch.load('./save_finetune/model_best.pth.tar')
+pretrain_dict = torch.load('./save_finetune/model_best.pth.tar', weights_only=False, map_location='cpu')
 pretrain_dict = pretrain_dict['state_dict']
 model_dict = net2.state_dict()
 pretrained_dict = {str('1.'+ k): v for k, v in pretrain_dict.items() if str('1.'+ k) in model_dict}
@@ -143,7 +143,7 @@ model_dict.update(pretrained_dict)
 net2.load_state_dict(model_dict) 
 net2=net2.cuda()
 
-pretrain_dict = torch.load('./save_finetune/model_best.pth.tar')
+pretrain_dict = torch.load('./save_finetune/model_best.pth.tar', weights_only=False, map_location='cpu')
 pretrain_dict = pretrain_dict['state_dict']
 model_dict = net1.state_dict()
 pretrained_dict = {str('1.'+ k): v for k, v in pretrain_dict.items() if str('1.'+ k) in model_dict}

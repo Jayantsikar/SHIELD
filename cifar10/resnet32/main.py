@@ -191,9 +191,9 @@ parser.add_argument('--weight', default='1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 
                       help='weight')
 args = parser.parse_args()
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-if args.ngpu == 1:
+if args.ngpu == 1 and "CUDA_VISIBLE_DEVICES" not in os.environ:
     os.environ["CUDA_VISIBLE_DEVICES"] = str(
-        args.gpu_id)  # make only device #gpu_id visible, then
+        args.gpu_id)  # make only device #gpu_id visible if not set by SLURM
 
 args.use_cuda = args.ngpu > 0 and torch.cuda.is_available()  # check GPU
 
